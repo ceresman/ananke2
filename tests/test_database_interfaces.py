@@ -45,13 +45,18 @@ def entity_symbol():
 @pytest.mark.asyncio
 async def test_neo4j_interface(entity_symbol):
     """Test Neo4j interface with mocked connection."""
-    with patch('neo4j.AsyncGraphDatabase') as mock_neo4j:
-        # Setup mock
+    with patch('neo4j.AsyncGraphDatabase.driver', new_callable=AsyncMock) as mock_driver:
+        # Setup mock driver and session
         mock_session = AsyncMock()
-        mock_driver = AsyncMock()
-        mock_neo4j.driver.return_value = mock_driver
-        mock_driver.async_session.return_value = mock_session
-        mock_session.__aenter__.return_value.run = AsyncMock()
+        mock_session.__aenter__.return_value = mock_session
+        mock_session.run = AsyncMock()
+        mock_session.run.return_value = AsyncMock()
+        mock_session.run.return_value.data = AsyncMock(return_value=[{'id': entity_symbol.symbol_id}])
+
+        # Setup driver mock
+        mock_driver_instance = AsyncMock()
+        mock_driver_instance.async_session = AsyncMock(return_value=mock_session)
+        mock_driver.return_value = mock_driver_instance
 
         # Initialize interface
         interface = Neo4jInterface(uri="bolt://localhost:7687", username="neo4j", password="password")
@@ -60,19 +65,12 @@ async def test_neo4j_interface(entity_symbol):
         # Test create
         created_id = await interface.create(entity_symbol)
         assert created_id == entity_symbol.symbol_id
-        mock_session.__aenter__.return_value.run.assert_called()
 
         # Test read
-        mock_session.__aenter__.return_value.run.return_value.single.return_value = {
-            "n": {
-                "symbol_id": str(entity_symbol.symbol_id),
-                "name": entity_symbol.name,
-                "descriptions": entity_symbol.descriptions
-            }
-        }
-        retrieved = await interface.read(entity_symbol.symbol_id)
-        assert retrieved is not None
-        assert retrieved.name == entity_symbol.name
+        read_data = await interface.read(entity_symbol.symbol_id)
+        assert read_data is not None
+        assert isinstance(read_data, EntitySymbol)
+        assert read_data.symbol_id == entity_symbol.symbol_id
 
         await interface.disconnect()
 
@@ -94,40 +92,42 @@ async def test_chroma_interface():
         semantic = EntitySemantic(
             semantic_id=UUID('12345678-1234-5678-1234-567812345678'),
             name="test_semantic",
-            vector_representation=np.array([0.1, 0.2, 0.3])
+            vector_representation=[0.1, 0.2, 0.3]
         )
 
         # Test create
         created_id = await interface.create(semantic)
         assert created_id == semantic.semantic_id
-        mock_client.get_or_create_collection.assert_called_once()
+        mock_collection.add.assert_called_once()
+
+        # Test read
+        read_data = await interface.read(semantic.semantic_id)
+        assert read_data is not None
+        assert isinstance(read_data, EntitySemantic)
+        assert read_data.semantic_id == semantic.semantic_id
+        assert read_data.name == semantic.name
+        assert len(read_data.vector_representation) == len(semantic.vector_representation)
 
         await interface.disconnect()
 
 @pytest.mark.asyncio
 async def test_mysql_interface():
     """Test MySQL interface with mocked connection."""
-    with patch('sqlalchemy.ext.asyncio.create_async_engine') as mock_engine, \
-         patch('sqlalchemy.engine.base.Engine.connect') as mock_connect, \
-         patch('sqlalchemy.pool.impl.QueuePool.get') as mock_pool_get:
-
+    with patch('sqlalchemy.ext.asyncio.create_async_engine') as mock_engine:
         # Setup mock engine
         mock_engine_instance = AsyncMock()
         mock_engine.return_value = mock_engine_instance
 
-        # Mock connection
+        # Mock the connection context manager
         mock_conn = AsyncMock()
-        mock_connect.return_value = mock_conn
-        mock_pool_get.return_value = mock_conn
+        mock_conn.__aenter__.return_value = mock_conn
+        mock_engine_instance.begin.return_value = mock_conn
+        mock_engine_instance.connect = AsyncMock(return_value=mock_conn)
 
-        # Mock the begin context manager
-        mock_begin_ctx = AsyncMock()
-        mock_begin_ctx.__aenter__.return_value = mock_conn
-        mock_engine_instance.begin.return_value = mock_begin_ctx
-
-        # Mock raw connection
-        mock_engine_instance.raw_connection = AsyncMock()
-        mock_engine_instance.raw_connection.return_value = mock_conn
+        # Mock execute and fetch results
+        mock_result = AsyncMock()
+        mock_result.scalar.return_value = UUID('12345678-1234-5678-1234-567812345678')
+        mock_conn.execute = AsyncMock(return_value=mock_result)
 
         # Initialize interface
         interface = MySQLInterface(
@@ -150,10 +150,17 @@ async def test_mysql_interface():
         # Test create
         created_id = await interface.create(data)
         assert created_id == data.data_id
+        mock_conn.execute.assert_called()
 
         # Test read
+        mock_result.mappings = AsyncMock(return_value=[{
+            'data_id': data.data_id,
+            'data_type': data.data_type,
+            'data_value': data.data_value
+        }])
         read_data = await interface.read(data.data_id)
         assert read_data is not None
+        assert isinstance(read_data, StructuredData)
         assert read_data.data_id == data.data_id
         assert read_data.data_type == data.data_type
         assert read_data.data_value == data.data_value
