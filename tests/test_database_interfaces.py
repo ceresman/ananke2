@@ -164,10 +164,105 @@ async def test_mysql_interface():
     from sqlalchemy.pool import Pool, _ConnectionFairy
     import aiomysql
 
+    # Create mock cursor that matches aiomysql's cursor interface
+    class MockCursor:
+        def __init__(self, connection=None):
+            self.description = None
+            self.rowcount = 0
+            self.arraysize = 1
+            self.connection = connection
+            self._result = type('Result', (), {
+                'affected_rows': 0,
+                'description': None,
+                'insert_id': None,
+                'rows': [],
+                'warning_count': 0
+            })()
+            self.execute = AsyncMock()
+            self.fetchall = AsyncMock(return_value=[])
+            self.fetchone = AsyncMock(return_value=None)
+            self.close = AsyncMock()
+            self._adapt_connection = connection
+            self.await_ = getattr(connection, 'await_', None)
+            self._is_server_side = False
+            self.charset = 'utf8mb4'
+
+        def _get_db(self):
+            return self.connection
+
+        def __await__(self):
+            async def _await():
+                return self
+            return _await().__await__()
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc_val, exc_tb):
+            await self.close()
+
+        def __iter__(self):
+            return self
+
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            row = await self.fetchone()
+            if row is None:
+                raise StopAsyncIteration
+            return row
+
+    # Create mock DBAPI that matches aiomysql's interface
+    class MockDBAPI:
+        def __init__(self):
+            self.Cursor = MockCursor
+            self.paramstyle = 'format'
+            self.threadsafety = 1
+            self.Error = Exception
+            self.InterfaceError = Exception
+            self.DatabaseError = Exception
+            self.DataError = Exception
+            self.OperationalError = Exception
+            self.IntegrityError = Exception
+            self.InternalError = Exception
+            self.ProgrammingError = Exception
+            self.NotSupportedError = Exception
+
+    # Create mock connection that properly handles cursor creation
+    class MockConnection(AsyncMock):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self._cursor = None
+            self.dbapi = MockDBAPI()
+            self.await_ = lambda x: x() if callable(x) else x
+            self._loop = None
+            self.charset = 'utf8mb4'
+            self.cursors = type('cursors', (), {'Cursor': MockCursor})
+            self._result = type('Result', (), {
+                'affected_rows': 0,
+                'description': None,
+                'insert_id': None,
+                'rows': [],
+                'warning_count': 0
+            })()
+
+        def cursor(self, cursor_class=None):
+            cursor_cls = cursor_class if cursor_class else self.dbapi.Cursor
+            if not self._cursor:
+                self._cursor = cursor_cls(connection=self)
+            return self._cursor
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc_val, exc_tb):
+            if self._cursor:
+                await self._cursor.close()
+            await self.close()
+
     # Create mock connection
-    mock_connection = AsyncMock()
-    mock_connection.cursor = AsyncMock()
-    mock_connection.close = AsyncMock()
+    mock_connection = MockConnection()
 
     # Create mock fairy using MagicMock
     mock_fairy = MagicMock()

@@ -22,6 +22,15 @@ class Settings(BaseSettings):
     MYSQL_PASSWORD: str = "password"
     MYSQL_DATABASE: str = "ananke2"
 
+    # Redis settings
+    REDIS_HOST: str = "redis"  # Docker service name
+    REDIS_PORT: int = 6379
+    REDIS_DB: int = 0
+
+    # Celery settings
+    CELERY_BROKER_URL: str = "redis://redis:6379/0"  # Using Docker service name
+    CELERY_RESULT_BACKEND: str = "redis://redis:6379/0"
+
     class Config:
         """Pydantic config."""
         env_file = ".env"
