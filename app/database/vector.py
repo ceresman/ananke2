@@ -1,4 +1,4 @@
-"""Chroma database interface implementation."""
+"""ChromaDB vector database interface implementation."""
 
 from typing import Any, Dict, List, Optional
 from uuid import UUID
@@ -12,7 +12,7 @@ from ..models.entities import EntitySemantic
 class ChromaInterface(DatabaseInterface[EntitySemantic]):
     """Chroma vector database interface implementation."""
 
-    def __init__(self, host: str, port: int, collection_name: str):
+    def __init__(self, host: str = "localhost", port: int = 8000, collection_name: str = "default"):
         """Initialize Chroma interface."""
         self.host = host
         self.port = port
@@ -22,10 +22,11 @@ class ChromaInterface(DatabaseInterface[EntitySemantic]):
 
     async def connect(self) -> None:
         """Establish connection to Chroma database."""
-        self._client = chromadb.Client(Settings(
+        settings = Settings(
             chroma_server_host=self.host,
             chroma_server_http_port=self.port
-        ))
+        )
+        self._client = chromadb.Client(settings)
         self._collection = self._client.get_or_create_collection(
             name=self.collection_name
         )
