@@ -74,8 +74,8 @@ class Neo4jInterface(DatabaseInterface[EntitySymbol]):
                 name=entity["name"],
                 descriptions=entity["descriptions"],
                 semantics=[],  # Load semantics separately
-                propertys=[],  # Load properties separately
-                label=[]  # Load labels separately
+                properties=[],  # Updated from propertys
+                labels=[]  # Updated from label
             )
         finally:
             await session.close()

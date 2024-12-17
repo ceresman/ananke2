@@ -185,13 +185,23 @@ async def test_mysql_interface():
     mock_engine.begin = AsyncMock(return_value=mock_session)
     mock_engine.dispose = AsyncMock()
 
+    # Create mock cursor with async context management
+    mock_cursor = AsyncMock()
+    mock_cursor.__aenter__ = AsyncMock(return_value=mock_cursor)
+    mock_cursor.__aexit__ = AsyncMock()
+
+    # Create mock connection with async context management
+    mock_connection = AsyncMock()
+    mock_connection.cursor = AsyncMock(return_value=mock_cursor)
+    mock_connection.__aenter__ = AsyncMock(return_value=mock_connection)
+    mock_connection.__aexit__ = AsyncMock()
+
     # Patch all necessary database-related functions
     patches = [
         patch('sqlalchemy.ext.asyncio.create_async_engine', return_value=mock_engine),
-        patch('aiomysql.connect', AsyncMock()),
-        patch('aiomysql.Connection._connect', AsyncMock()),
-        patch('aiomysql.Connection._get_server_information', AsyncMock()),
-        patch('aiomysql.Connection._request_authentication', AsyncMock())
+        patch('aiomysql.connect', AsyncMock(return_value=mock_connection)),
+        patch('aiomysql.Connection', return_value=mock_connection),
+        patch('aiomysql.Cursor', return_value=mock_cursor)
     ]
 
     # Apply all patches
@@ -234,8 +244,6 @@ async def test_mysql_interface():
         mock_session.execute = AsyncMock(side_effect=Exception("Database error"))
         with pytest.raises(Exception):
             await interface.create(data)
-
-        await interface.disconnect()
 
         await interface.disconnect()
 
