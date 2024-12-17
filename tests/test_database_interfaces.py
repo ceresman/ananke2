@@ -2,7 +2,7 @@
 
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
-from uuid import UUID
+from uuid import UUID, uuid4
 import numpy as np
 from contextlib import ExitStack
 
@@ -199,9 +199,16 @@ async def test_mysql_interface():
         async def __aexit__(self, exc_type, exc_val, exc_tb):
             await self.session.close()
 
+    # Mock aiomysql connection
+    mock_aiomysql_conn = AsyncMock()
+    mock_aiomysql_conn.__aenter__.return_value = mock_aiomysql_conn
+    mock_aiomysql_conn.__aexit__.return_value = None
+
     # Initialize MySQL interface with mocked components
     with patch('sqlalchemy.ext.asyncio.create_async_engine', return_value=mock_engine), \
-         patch('sqlalchemy.orm.sessionmaker', return_value=MockSessionFactory()):
+         patch('sqlalchemy.orm.sessionmaker', return_value=MockSessionFactory()), \
+         patch('aiomysql.connect', return_value=mock_aiomysql_conn), \
+         patch('aiomysql.Connection._connect', AsyncMock()):
 
         interface = MySQLInterface(
             host="localhost",
@@ -249,10 +256,9 @@ async def test_model_serialization(entity_symbol):
     assert "symbol_id" in serialized
     assert "name" in serialized
     assert "descriptions" in serialized
-    assert "semantics" in serialized
+    assert isinstance(serialized["semantics"], list)
     assert "properties" in serialized
     assert "labels" in serialized
-    assert isinstance(serialized["semantics"], list)
 
     # Test EntitySemantic serialization
     if entity_symbol.semantics:
