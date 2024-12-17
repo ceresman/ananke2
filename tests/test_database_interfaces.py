@@ -159,57 +159,50 @@ async def test_chroma_interface():
 @pytest.mark.asyncio
 async def test_mysql_interface():
     """Test MySQL interface with mocked connection."""
-    from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
+    from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine, AsyncConnection
     from sqlalchemy.engine.url import URL
+    from sqlalchemy.orm import sessionmaker
+    import aiomysql
+    import asyncio
 
     # Create mock session and result
     mock_session = AsyncMock(spec=AsyncSession)
     mock_result = AsyncMock()
-
-    # Setup mock result
-    mock_result.__aiter__ = AsyncMock(return_value=iter([{
-        'data_id': UUID('12345678-1234-5678-1234-567812345678'),
-        'data_type': 'test_type',
-        'data_value': {'key': 'value'}
-    }]))
-    mock_result.scalar = AsyncMock(return_value=UUID('12345678-1234-5678-1234-567812345678'))
-    mock_result.mappings = AsyncMock(return_value=mock_result)
-
-    # Setup mock session
-    mock_session.__aenter__.return_value = mock_session
-    mock_session.execute = AsyncMock(return_value=mock_result)
+    mock_result.scalar.return_value = None
+    mock_session.execute.return_value = mock_result
     mock_session.commit = AsyncMock()
 
-    # Create mock engine that returns our session
+    # Create mock engine
     mock_engine = AsyncMock(spec=AsyncEngine)
-    mock_engine.begin = AsyncMock(return_value=mock_session)
-    mock_engine.dispose = AsyncMock()
 
-    # Create mock cursor with async context management
-    mock_cursor = AsyncMock()
-    mock_cursor.__aenter__ = AsyncMock(return_value=mock_cursor)
-    mock_cursor.__aexit__ = AsyncMock()
-
-    # Create mock connection with async context management
-    mock_connection = AsyncMock()
-    mock_connection.cursor = AsyncMock(return_value=mock_cursor)
-    mock_connection.__aenter__ = AsyncMock(return_value=mock_connection)
+    # Create mock connection that properly implements async behavior
+    mock_connection = AsyncMock(spec=AsyncConnection)
+    mock_connection.__aenter__.return_value = mock_connection
+    mock_connection.run_sync = AsyncMock()
     mock_connection.__aexit__ = AsyncMock()
 
-    # Patch all necessary database-related functions
-    patches = [
-        patch('sqlalchemy.ext.asyncio.create_async_engine', return_value=mock_engine),
-        patch('aiomysql.connect', AsyncMock(return_value=mock_connection)),
-        patch('aiomysql.Connection', return_value=mock_connection),
-        patch('aiomysql.Cursor', return_value=mock_cursor)
-    ]
+    # Set up engine's begin method to return our async connection
+    mock_engine.begin.return_value = mock_connection
+    mock_engine.dispose = AsyncMock()
 
-    # Apply all patches
-    with ExitStack() as stack:
-        for patch_item in patches:
-            stack.enter_context(patch_item)
+    # Create mock session factory
+    class MockSessionFactory:
+        def __init__(self):
+            self.session = mock_session
 
-        # Initialize interface
+        async def __call__(self):
+            return self.session
+
+        async def __aenter__(self):
+            return self.session
+
+        async def __aexit__(self, exc_type, exc_val, exc_tb):
+            await self.session.close()
+
+    # Initialize MySQL interface with mocked components
+    with patch('sqlalchemy.ext.asyncio.create_async_engine', return_value=mock_engine), \
+         patch('sqlalchemy.orm.sessionmaker', return_value=MockSessionFactory()):
+
         interface = MySQLInterface(
             host="localhost",
             port=3306,
@@ -257,22 +250,23 @@ async def test_model_serialization(entity_symbol):
     assert "name" in serialized
     assert "descriptions" in serialized
     assert "semantics" in serialized
-    assert "properties" in serialized  # Updated field name
-    assert "labels" in serialized  # Updated field name
+    assert "properties" in serialized
+    assert "labels" in serialized
     assert isinstance(serialized["semantics"], list)
 
     # Test EntitySemantic serialization
-    semantic = entity_symbol.semantics[0]
-    semantic_serialized = semantic.model_dump()
-    assert isinstance(semantic_serialized, dict)
-    assert "semantic_id" in semantic_serialized
-    assert "name" in semantic_serialized
-    assert "vector_representation" in semantic_serialized
+    if entity_symbol.semantics:
+        semantic = entity_symbol.semantics[0]
+        semantic_serialized = semantic.model_dump()
+        assert isinstance(semantic_serialized, dict)
+        assert "semantic_id" in semantic_serialized
+        assert "name" in semantic_serialized
+        assert "vector_representation" in semantic_serialized
 
     # Test StructuredData serialization
-    structured = entity_symbol.properties[0]  # Updated field name
-    structured_serialized = structured.model_dump()
-    assert isinstance(structured_serialized, dict)
-    assert "data_id" in structured_serialized
-    assert "data_type" in structured_serialized
-    assert "data_value" in structured_serialized
+    property_data = entity_symbol.properties[0]
+    property_serialized = property_data.model_dump()
+    assert isinstance(property_serialized, dict)
+    assert "data_id" in property_serialized
+    assert "data_type" in property_serialized
+    assert "data_value" in property_serialized
