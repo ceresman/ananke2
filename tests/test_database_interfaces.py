@@ -4,8 +4,7 @@ import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 from uuid import UUID
 import numpy as np
-import neo4j
-from neo4j import AsyncGraphDatabase
+from contextlib import ExitStack
 
 from app.models.entities import EntitySymbol, EntitySemantic
 from app.models.structured import StructuredData
@@ -50,20 +49,32 @@ async def test_neo4j_interface(entity_symbol):
     mock_driver = AsyncMock()
     mock_session = AsyncMock()
     mock_result = AsyncMock()
+    mock_read_result = AsyncMock()
 
-    # Setup mock result
-    mock_result.data = AsyncMock(return_value=[{
-        'n': {
+    # Setup mock result for create
+    mock_result.single = AsyncMock(return_value={'e.id': str(entity_symbol.symbol_id)})
+
+    # Setup mock result for read
+    mock_read_result.single = AsyncMock(return_value={
+        'e': {
             'id': str(entity_symbol.symbol_id),
             'name': entity_symbol.name,
             'descriptions': entity_symbol.descriptions
         }
-    }])
-    mock_result.single = AsyncMock(return_value={'e.id': str(entity_symbol.symbol_id)})
+    })
 
     # Setup mock session with proper async context management
     mock_session.__aenter__.return_value = mock_session
-    mock_session.run = AsyncMock(return_value=mock_result)
+
+    # Configure run method to return different results based on the query
+    async def mock_run(query, **kwargs):
+        if 'CREATE' in query:
+            return mock_result
+        elif 'MATCH' in query:
+            return mock_read_result
+        return AsyncMock()
+
+    mock_session.run = AsyncMock(side_effect=mock_run)
 
     # Setup mock driver with proper session creation
     mock_driver.session.return_value = mock_session
@@ -151,16 +162,6 @@ async def test_mysql_interface():
     from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
     from sqlalchemy.engine.url import URL
 
-    # Create mock URL and engine
-    mock_url = URL.create(
-        drivername="mysql+aiomysql",
-        username="root",
-        password="password",
-        host="localhost",
-        port=3306,
-        database="test"
-    )
-
     # Create mock session and result
     mock_session = AsyncMock(spec=AsyncSession)
     mock_result = AsyncMock()
@@ -177,15 +178,27 @@ async def test_mysql_interface():
     # Setup mock session
     mock_session.__aenter__.return_value = mock_session
     mock_session.execute = AsyncMock(return_value=mock_result)
+    mock_session.commit = AsyncMock()
 
     # Create mock engine that returns our session
-    async def mock_begin():
-        return mock_session
-
     mock_engine = AsyncMock(spec=AsyncEngine)
-    mock_engine.begin = AsyncMock(side_effect=mock_begin)
+    mock_engine.begin = AsyncMock(return_value=mock_session)
+    mock_engine.dispose = AsyncMock()
 
-    with patch('sqlalchemy.ext.asyncio.create_async_engine', return_value=mock_engine):
+    # Patch all necessary database-related functions
+    patches = [
+        patch('sqlalchemy.ext.asyncio.create_async_engine', return_value=mock_engine),
+        patch('aiomysql.connect', AsyncMock()),
+        patch('aiomysql.Connection._connect', AsyncMock()),
+        patch('aiomysql.Connection._get_server_information', AsyncMock()),
+        patch('aiomysql.Connection._request_authentication', AsyncMock())
+    ]
+
+    # Apply all patches
+    with ExitStack() as stack:
+        for patch_item in patches:
+            stack.enter_context(patch_item)
+
         # Initialize interface
         interface = MySQLInterface(
             host="localhost",
