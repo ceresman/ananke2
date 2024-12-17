@@ -61,16 +61,14 @@ async def test_neo4j_interface(entity_symbol):
     }])
     mock_result.single = AsyncMock(return_value={'e.id': str(entity_symbol.symbol_id)})
 
-    # Setup mock session
-    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-    mock_session.__aexit__ = AsyncMock()
+    # Setup mock session with proper async context management
+    mock_session.__aenter__.return_value = mock_session
     mock_session.run = AsyncMock(return_value=mock_result)
 
-    # Setup mock driver
-    mock_driver.session = AsyncMock(return_value=mock_session)
-    mock_driver.close = AsyncMock()
+    # Setup mock driver with proper session creation
+    mock_driver.session.return_value = mock_session
 
-    # Patch Neo4j driver creation at the correct level
+    # Patch Neo4j driver creation
     with patch('neo4j.AsyncGraphDatabase.driver', return_value=mock_driver):
         # Initialize interface
         interface = Neo4jInterface(uri="bolt://localhost:7687", username="neo4j", password="password")
@@ -150,7 +148,7 @@ async def test_chroma_interface():
 @pytest.mark.asyncio
 async def test_mysql_interface():
     """Test MySQL interface with mocked connection."""
-    from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
+    from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
     from sqlalchemy.engine.url import URL
 
     # Create mock URL and engine
@@ -163,7 +161,7 @@ async def test_mysql_interface():
         database="test"
     )
 
-    mock_engine = AsyncMock(spec=AsyncEngine)
+    # Create mock session and result
     mock_session = AsyncMock(spec=AsyncSession)
     mock_result = AsyncMock()
 
@@ -177,14 +175,15 @@ async def test_mysql_interface():
     mock_result.mappings = AsyncMock(return_value=mock_result)
 
     # Setup mock session
-    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-    mock_session.__aexit__ = AsyncMock()
+    mock_session.__aenter__.return_value = mock_session
     mock_session.execute = AsyncMock(return_value=mock_result)
 
-    # Setup mock engine
-    mock_engine.begin = AsyncMock(return_value=mock_session)
-    mock_engine.__aenter__ = AsyncMock(return_value=mock_engine)
-    mock_engine.__aexit__ = AsyncMock()
+    # Create mock engine that returns our session
+    async def mock_begin():
+        return mock_session
+
+    mock_engine = AsyncMock(spec=AsyncEngine)
+    mock_engine.begin = AsyncMock(side_effect=mock_begin)
 
     with patch('sqlalchemy.ext.asyncio.create_async_engine', return_value=mock_engine):
         # Initialize interface

@@ -33,7 +33,8 @@ class Neo4jInterface(DatabaseInterface[EntitySymbol]):
 
     async def create(self, item: EntitySymbol) -> UUID:
         """Create a new entity in Neo4j."""
-        async with self._driver.session() as session:
+        session = await self._driver.session()
+        try:
             result = await session.run(
                 """
                 CREATE (e:Entity {
@@ -49,10 +50,13 @@ class Neo4jInterface(DatabaseInterface[EntitySymbol]):
             )
             record = await result.single()
             return UUID(record["e.id"])
+        finally:
+            await session.close()
 
     async def read(self, id: UUID) -> Optional[EntitySymbol]:
         """Read an entity from Neo4j by ID."""
-        async with self._driver.session() as session:
+        session = await self._driver.session()
+        try:
             result = await session.run(
                 """
                 MATCH (e:Entity {id: $id})
@@ -73,10 +77,13 @@ class Neo4jInterface(DatabaseInterface[EntitySymbol]):
                 propertys=[],  # Load properties separately
                 label=[]  # Load labels separately
             )
+        finally:
+            await session.close()
 
     async def update(self, id: UUID, item: EntitySymbol) -> bool:
         """Update an existing entity in Neo4j."""
-        async with self._driver.session() as session:
+        session = await self._driver.session()
+        try:
             result = await session.run(
                 """
                 MATCH (e:Entity {id: $id})
@@ -89,10 +96,13 @@ class Neo4jInterface(DatabaseInterface[EntitySymbol]):
                 descriptions=item.descriptions
             )
             return await result.single() is not None
+        finally:
+            await session.close()
 
     async def delete(self, id: UUID) -> bool:
         """Delete an entity from Neo4j by ID."""
-        async with self._driver.session() as session:
+        session = await self._driver.session()
+        try:
             result = await session.run(
                 """
                 MATCH (e:Entity {id: $id})
@@ -103,10 +113,13 @@ class Neo4jInterface(DatabaseInterface[EntitySymbol]):
             )
             record = await result.single()
             return record and record["count"] > 0
+        finally:
+            await session.close()
 
     async def list(self, skip: int = 0, limit: int = 100) -> List[EntitySymbol]:
         """List entities from Neo4j with pagination."""
-        async with self._driver.session() as session:
+        session = await self._driver.session()
+        try:
             result = await session.run(
                 """
                 MATCH (e:Entity)
@@ -124,11 +137,13 @@ class Neo4jInterface(DatabaseInterface[EntitySymbol]):
                     name=record["e"]["name"],
                     descriptions=record["e"]["descriptions"],
                     semantics=[],
-                    propertys=[],
-                    label=[]
+                    properties=[],
+                    labels=[]
                 )
                 for record in records
             ]
+        finally:
+            await session.close()
 
     async def search(self, query: Dict[str, Any]) -> List[EntitySymbol]:
         """Search for entities in Neo4j using a query dictionary."""
@@ -145,7 +160,8 @@ class Neo4jInterface(DatabaseInterface[EntitySymbol]):
         RETURN e
         """
 
-        async with self._driver.session() as session:
+        session = await self._driver.session()
+        try:
             result = await session.run(cypher_query, params)
             records = await result.all()
             return [
@@ -159,3 +175,5 @@ class Neo4jInterface(DatabaseInterface[EntitySymbol]):
                 )
                 for record in records
             ]
+        finally:
+            await session.close()
