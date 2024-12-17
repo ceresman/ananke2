@@ -12,7 +12,11 @@ psycopg = {extras = ["binary"], version = "^3.2.3"}
 numpy = "^2.2.0"
 sympy = "^1.13.3"
 pydantic = "^2.10.3"
-
+neo4j = "^5.18.0"
+chromadb = "^0.4.24"
+aiomysql = "^0.2.0"
+sqlalchemy = {extras = ["asyncio"], version = "^2.0.27"}
+lean4 = "^0.1.0"
 
 [build-system]
 requires = ["poetry-core"]
