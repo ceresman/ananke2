@@ -25,3 +25,7 @@ __all__ = [
     'StructuredChunk',
     'Document'
 ]
+
+EntitySymbol.model_rebuild()
+RelationSymbol.model_rebuild()
+TripleSymbol.model_rebuild()

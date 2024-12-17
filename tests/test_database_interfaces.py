@@ -108,19 +108,26 @@ async def test_chroma_interface():
 async def test_mysql_interface():
     """Test MySQL interface with mocked connection."""
     with patch('sqlalchemy.ext.asyncio.create_async_engine') as mock_engine, \
-         patch('sqlalchemy.ext.asyncio.AsyncSession') as mock_session:
-        # Setup mock engine and session
+         patch('sqlalchemy.engine.base.Engine.connect') as mock_connect, \
+         patch('sqlalchemy.pool.impl.QueuePool.get') as mock_pool_get:
+
+        # Setup mock engine
         mock_engine_instance = AsyncMock()
         mock_engine.return_value = mock_engine_instance
 
-        # Mock begin context manager
+        # Mock connection
+        mock_conn = AsyncMock()
+        mock_connect.return_value = mock_conn
+        mock_pool_get.return_value = mock_conn
+
+        # Mock the begin context manager
         mock_begin_ctx = AsyncMock()
-        mock_begin_ctx.__aenter__.return_value = AsyncMock()
+        mock_begin_ctx.__aenter__.return_value = mock_conn
         mock_engine_instance.begin.return_value = mock_begin_ctx
 
-        # Mock session factory
-        mock_session_instance = AsyncMock()
-        mock_session.return_value = mock_session_instance
+        # Mock raw connection
+        mock_engine_instance.raw_connection = AsyncMock()
+        mock_engine_instance.raw_connection.return_value = mock_conn
 
         # Initialize interface
         interface = MySQLInterface(
@@ -130,6 +137,7 @@ async def test_mysql_interface():
             password="password",
             database="test"
         )
+
         await interface.connect()
 
         # Test structured data
@@ -142,6 +150,13 @@ async def test_mysql_interface():
         # Test create
         created_id = await interface.create(data)
         assert created_id == data.data_id
+
+        # Test read
+        read_data = await interface.read(data.data_id)
+        assert read_data is not None
+        assert read_data.data_id == data.data_id
+        assert read_data.data_type == data.data_type
+        assert read_data.data_value == data.data_value
 
         await interface.disconnect()
 

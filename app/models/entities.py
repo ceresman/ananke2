@@ -1,11 +1,13 @@
 from uuid import UUID
-from typing import List, Dict, Any, TYPE_CHECKING
+from typing import List, Dict, Any, TYPE_CHECKING, ForwardRef
 import numpy as np
 from pydantic import BaseModel, ConfigDict
 from .base import BaseObject
 
 if TYPE_CHECKING:
     from .structured import StructuredData
+else:
+    StructuredData = ForwardRef('StructuredData')
 
 class EntitySemantic(BaseObject):
     """Represents a semantic entity in the knowledge graph."""
@@ -29,8 +31,8 @@ class EntitySymbol(BaseObject):
     name: str
     descriptions: List[str]
     semantics: List[EntitySemantic]
-    properties: List['StructuredData']  # Fixed pluralization
-    labels: List['StructuredData']  # Renamed for consistency
+    properties: List[StructuredData]  # Fixed pluralization
+    labels: List[StructuredData]  # Renamed for consistency
 
     def to_neo4j(self) -> Dict[str, Any]:
         """Special handling for Neo4j graph database."""
