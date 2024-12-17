@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Optional
 from uuid import UUID
 import chromadb
 from chromadb.config import Settings
+import numpy as np
 
 from .base import DatabaseInterface
 from ..models.entities import EntitySemantic
@@ -22,7 +23,6 @@ class ChromaInterface(DatabaseInterface[EntitySemantic]):
     async def connect(self) -> None:
         """Establish connection to Chroma database."""
         self._client = chromadb.Client(Settings(
-            chroma_api_impl="rest",
             chroma_server_host=self.host,
             chroma_server_http_port=self.port
         ))
@@ -38,9 +38,10 @@ class ChromaInterface(DatabaseInterface[EntitySemantic]):
 
     async def create(self, item: EntitySemantic) -> UUID:
         """Create a new semantic entity in Chroma."""
+        vector = np.array(item.vector_representation).tolist()
         self._collection.add(
             ids=[str(item.semantic_id)],
-            embeddings=[item.vector_representation],
+            embeddings=[vector],
             metadatas=[{"name": item.name}]
         )
         return item.semantic_id
@@ -58,15 +59,16 @@ class ChromaInterface(DatabaseInterface[EntitySemantic]):
         return EntitySemantic(
             semantic_id=UUID(result["ids"][0]),
             name=result["metadatas"][0]["name"],
-            vector_representation=result["embeddings"][0]
+            vector_representation=np.array(result["embeddings"][0])
         )
 
     async def update(self, id: UUID, item: EntitySemantic) -> bool:
         """Update an existing semantic entity in Chroma."""
         try:
+            vector = np.array(item.vector_representation).tolist()
             self._collection.update(
                 ids=[str(id)],
-                embeddings=[item.vector_representation],
+                embeddings=[vector],
                 metadatas=[{"name": item.name}]
             )
             return True
@@ -93,7 +95,7 @@ class ChromaInterface(DatabaseInterface[EntitySemantic]):
             EntitySemantic(
                 semantic_id=UUID(id),
                 name=metadata["name"],
-                vector_representation=embedding
+                vector_representation=np.array(embedding)
             )
             for id, metadata, embedding in zip(
                 result["ids"],
@@ -107,8 +109,9 @@ class ChromaInterface(DatabaseInterface[EntitySemantic]):
         if "vector" not in query:
             return []
 
+        vector = np.array(query["vector"]).tolist()
         result = self._collection.query(
-            query_embeddings=[query["vector"]],
+            query_embeddings=[vector],
             n_results=query.get("limit", 10),
             include=["embeddings", "metadatas"]
         )
@@ -117,7 +120,7 @@ class ChromaInterface(DatabaseInterface[EntitySemantic]):
             EntitySemantic(
                 semantic_id=UUID(id),
                 name=metadata["name"],
-                vector_representation=embedding
+                vector_representation=np.array(embedding)
             )
             for id, metadata, embedding in zip(
                 result["ids"],

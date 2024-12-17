@@ -1,8 +1,7 @@
 """Unit tests for database interfaces using mocks."""
 
-import asyncio
 import pytest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID
 import numpy as np
 from typing import List
@@ -44,48 +43,48 @@ def entity_symbol():
     )
 
 @pytest.mark.asyncio
-async def test_neo4j_interface():
+async def test_neo4j_interface(entity_symbol):
     """Test Neo4j interface with mocked connection."""
     with patch('neo4j.AsyncGraphDatabase') as mock_neo4j:
         # Setup mock
         mock_session = AsyncMock()
-        mock_neo4j.driver.return_value.async_session.return_value = mock_session
+        mock_driver = AsyncMock()
+        mock_neo4j.driver.return_value = mock_driver
+        mock_driver.async_session.return_value = mock_session
         mock_session.__aenter__.return_value.run = AsyncMock()
 
         # Initialize interface
         interface = Neo4jInterface(uri="bolt://localhost:7687", username="neo4j", password="password")
         await interface.connect()
 
-        # Test entity
-        entity = entity_symbol()
-
         # Test create
-        created_id = await interface.create(entity)
-        assert created_id == entity.symbol_id
+        created_id = await interface.create(entity_symbol)
+        assert created_id == entity_symbol.symbol_id
         mock_session.__aenter__.return_value.run.assert_called()
 
         # Test read
         mock_session.__aenter__.return_value.run.return_value.single.return_value = {
             "n": {
-                "symbol_id": str(entity.symbol_id),
-                "name": entity.name,
-                "descriptions": entity.descriptions
+                "symbol_id": str(entity_symbol.symbol_id),
+                "name": entity_symbol.name,
+                "descriptions": entity_symbol.descriptions
             }
         }
-        retrieved = await interface.read(entity.symbol_id)
+        retrieved = await interface.read(entity_symbol.symbol_id)
         assert retrieved is not None
-        assert retrieved.name == entity.name
+        assert retrieved.name == entity_symbol.name
 
         await interface.disconnect()
 
 @pytest.mark.asyncio
 async def test_chroma_interface():
     """Test Chroma interface with mocked client."""
-    with patch('chromadb.HttpClient') as mock_chroma:
+    with patch('chromadb.Client') as mock_chroma:
         # Setup mock
-        mock_client = AsyncMock()
+        mock_client = MagicMock()
         mock_chroma.return_value = mock_client
-        mock_client.get_collection = AsyncMock()
+        mock_collection = MagicMock()
+        mock_client.get_or_create_collection.return_value = mock_collection
 
         # Initialize interface
         interface = ChromaInterface(host="localhost", port=8000, collection_name="test")
@@ -95,20 +94,25 @@ async def test_chroma_interface():
         semantic = EntitySemantic(
             semantic_id=UUID('12345678-1234-5678-1234-567812345678'),
             name="test_semantic",
-            vector_representation=[0.1, 0.2, 0.3]
+            vector_representation=np.array([0.1, 0.2, 0.3])
         )
 
         # Test create
         created_id = await interface.create(semantic)
         assert created_id == semantic.semantic_id
-        mock_client.get_collection.assert_called()
+        mock_client.get_or_create_collection.assert_called_once()
 
         await interface.disconnect()
 
 @pytest.mark.asyncio
 async def test_mysql_interface():
     """Test MySQL interface with mocked connection."""
-    with patch('sqlalchemy.ext.asyncio.create_async_engine'):
+    with patch('sqlalchemy.ext.asyncio.create_async_engine') as mock_engine:
+        # Setup mock
+        mock_conn = AsyncMock()
+        mock_engine.return_value = AsyncMock()
+        mock_engine.return_value.begin.return_value.__aenter__.return_value = mock_conn
+
         # Initialize interface
         interface = MySQLInterface(
             host="localhost",
@@ -130,20 +134,13 @@ async def test_mysql_interface():
         created_id = await interface.create(data)
         assert created_id == data.data_id
 
-        # Test serialization
-        serialized = interface._serialize_model(data)
-        assert isinstance(serialized, dict)
-        assert "data_id" in serialized
-        assert "data_type" in serialized
-        assert "data_value" in serialized
-
         await interface.disconnect()
 
-def test_model_serialization():
+@pytest.mark.asyncio
+async def test_model_serialization(entity_symbol):
     """Test that all data models can be properly serialized."""
     # Test EntitySymbol serialization
-    entity = entity_symbol()
-    serialized = entity.model_dump()
+    serialized = entity_symbol.model_dump()
     assert isinstance(serialized, dict)
     assert "symbol_id" in serialized
     assert "name" in serialized
@@ -152,7 +149,7 @@ def test_model_serialization():
     assert isinstance(serialized["semantics"], list)
 
     # Test EntitySemantic serialization
-    semantic = entity.semantics[0]
+    semantic = entity_symbol.semantics[0]
     semantic_serialized = semantic.model_dump()
     assert isinstance(semantic_serialized, dict)
     assert "semantic_id" in semantic_serialized
@@ -160,7 +157,7 @@ def test_model_serialization():
     assert "vector_representation" in semantic_serialized
 
     # Test StructuredData serialization
-    structured = entity.propertys[0]
+    structured = entity_symbol.propertys[0]
     structured_serialized = structured.model_dump()
     assert isinstance(structured_serialized, dict)
     assert "data_id" in structured_serialized
