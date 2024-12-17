@@ -162,6 +162,7 @@ async def test_mysql_interface():
     from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine, AsyncConnection
     from sqlalchemy.engine.url import URL
     from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import Pool, _ConnectionFairy
     import aiomysql
     import asyncio
 
@@ -172,18 +173,36 @@ async def test_mysql_interface():
     mock_session.execute.return_value = mock_result
     mock_session.commit = AsyncMock()
 
-    # Create mock engine
+    # Create mock connection fairy with async context manager support
+    class AsyncConnectionFairy(MagicMock):
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc_val, exc_tb):
+            return None
+
+        def __await__(self):
+            async def _await():
+                return self
+            return _await().__await__()
+
+    mock_fairy = AsyncConnectionFairy(spec=_ConnectionFairy)
+    mock_fairy._connection = AsyncMock()
+
+    # Create mock pool with async support
+    mock_pool = MagicMock(spec=Pool)
+    async def async_connect():
+        return mock_fairy
+    mock_pool.connect = async_connect
+
+    # Create mock engine with proper async behavior
     mock_engine = AsyncMock(spec=AsyncEngine)
-
-    # Create mock connection that properly implements async behavior
-    mock_connection = AsyncMock(spec=AsyncConnection)
-    mock_connection.__aenter__.return_value = mock_connection
-    mock_connection.run_sync = AsyncMock()
-    mock_connection.__aexit__ = AsyncMock()
-
-    # Set up engine's begin method to return our async connection
-    mock_engine.begin.return_value = mock_connection
-    mock_engine.dispose = AsyncMock()
+    mock_engine.pool = mock_pool
+    mock_engine.raw_connection = async_connect
+    mock_engine.begin = AsyncMock()
+    mock_engine.begin.return_value = AsyncMock()
+    mock_engine.begin.return_value.__aenter__ = AsyncMock(return_value=mock_fairy)
+    mock_engine.begin.return_value.__aexit__ = AsyncMock(return_value=None)
 
     # Create mock session factory
     class MockSessionFactory:
@@ -199,16 +218,9 @@ async def test_mysql_interface():
         async def __aexit__(self, exc_type, exc_val, exc_tb):
             await self.session.close()
 
-    # Mock aiomysql connection
-    mock_aiomysql_conn = AsyncMock()
-    mock_aiomysql_conn.__aenter__.return_value = mock_aiomysql_conn
-    mock_aiomysql_conn.__aexit__.return_value = None
-
     # Initialize MySQL interface with mocked components
     with patch('sqlalchemy.ext.asyncio.create_async_engine', return_value=mock_engine), \
-         patch('sqlalchemy.orm.sessionmaker', return_value=MockSessionFactory()), \
-         patch('aiomysql.connect', return_value=mock_aiomysql_conn), \
-         patch('aiomysql.Connection._connect', AsyncMock()):
+         patch('sqlalchemy.orm.sessionmaker', return_value=MockSessionFactory()):
 
         interface = MySQLInterface(
             host="localhost",
