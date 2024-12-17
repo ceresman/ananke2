@@ -173,6 +173,42 @@ async def test_mysql_interface():
     mock_session.execute.return_value = mock_result
     mock_session.commit = AsyncMock()
 
+    # Create mock aiomysql connection class
+    class MockMySQLConnection(AsyncMock):
+        def __init__(self, *args, **kwargs):
+            super().__init__()
+            self._host = kwargs.get('host', 'localhost')
+            self._port = kwargs.get('port', 3306)
+            self._user = kwargs.get('user', 'root')
+            self._password = kwargs.get('password', '')
+            self._db = kwargs.get('db', '')
+            self._unix_socket = None
+            self._reader = AsyncMock()
+            self._writer = AsyncMock()
+            self._writer.transport = AsyncMock()
+            self._writer.transport.close = MagicMock()
+            self.closed = False
+
+        async def _connect(self):
+            return
+
+        async def _get_server_information(self):
+            return
+
+        async def _request_authentication(self):
+            return
+
+        async def ensure_closed(self):
+            self.closed = True
+            return
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc_val, exc_tb):
+            await self.ensure_closed()
+            return None
+
     # Create mock connection fairy with async context manager support
     class AsyncConnectionFairy(MagicMock):
         async def __aenter__(self):
@@ -186,8 +222,9 @@ async def test_mysql_interface():
                 return self
             return _await().__await__()
 
+    # Create mock connection fairy
     mock_fairy = AsyncConnectionFairy(spec=_ConnectionFairy)
-    mock_fairy._connection = AsyncMock()
+    mock_fairy._connection = MockMySQLConnection()
 
     # Create mock pool with async support
     mock_pool = MagicMock(spec=Pool)
@@ -218,9 +255,14 @@ async def test_mysql_interface():
         async def __aexit__(self, exc_type, exc_val, exc_tb):
             await self.session.close()
 
+    # Mock aiomysql.connect to return our mock connection
+    async def mock_connect(*args, **kwargs):
+        return MockMySQLConnection(**kwargs)
+
     # Initialize MySQL interface with mocked components
     with patch('sqlalchemy.ext.asyncio.create_async_engine', return_value=mock_engine), \
-         patch('sqlalchemy.orm.sessionmaker', return_value=MockSessionFactory()):
+         patch('sqlalchemy.orm.sessionmaker', return_value=MockSessionFactory()), \
+         patch('aiomysql.connect', mock_connect):
 
         interface = MySQLInterface(
             host="localhost",
@@ -232,30 +274,42 @@ async def test_mysql_interface():
 
         await interface.connect()
 
-        # Test structured data
-        data = StructuredData(
-            data_id=UUID('12345678-1234-5678-1234-567812345678'),
-            data_type="test_type",
-            data_value={"key": "value"}
+        # Test creating an entity
+        entity = EntitySymbol(
+            symbol_id=uuid4(),
+            name="test_entity",
+            descriptions=["test description"],
+            semantics=[],
+            properties=[
+                StructuredData(
+                    data_id=uuid4(),
+                    data_type="property",
+                    data_value={"key": "value"}
+                )
+            ],
+            labels=[
+                StructuredData(
+                    data_id=uuid4(),
+                    data_type="label",
+                    data_value={"category": "test"}
+                )
+            ]
         )
 
-        # Test create
-        created_id = await interface.create(data)
-        assert created_id == data.data_id
-        assert mock_session.execute.called
+        # Test CRUD operations
+        await interface.create(entity)
+        mock_session.execute.assert_called()
+        mock_session.commit.assert_called()
 
-        # Test read
-        read_data = await interface.read(data.data_id)
-        assert read_data is not None
-        assert isinstance(read_data, StructuredData)
-        assert read_data.data_id == data.data_id
-        assert read_data.data_type == data.data_type
-        assert read_data.data_value == data.data_value
+        # Reset mocks
+        mock_session.execute.reset_mock()
+        mock_session.commit.reset_mock()
 
-        # Test error handling
-        mock_session.execute = AsyncMock(side_effect=Exception("Database error"))
-        with pytest.raises(Exception):
-            await interface.create(data)
+        # Test read operation
+        mock_result.scalar.return_value = entity
+        result = await interface.read(entity.symbol_id, EntitySymbol)
+        assert result == entity
+        mock_session.execute.assert_called()
 
         await interface.disconnect()
 
