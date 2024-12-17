@@ -169,15 +169,11 @@ async def test_mysql_interface():
     mock_connection.cursor = AsyncMock()
     mock_connection.close = AsyncMock()
 
-    # Create mock connection fairy with proper async context manager spec
-    mock_fairy = AsyncMock(spec=_ConnectionFairy,
-                          spec_set=False,  # Allow setting additional attributes
-                          **{
-                              '__aenter__': AsyncMock(),
-                              '__aexit__': AsyncMock(),
-                          })
+    # Create mock fairy using MagicMock
+    mock_fairy = MagicMock()
     mock_fairy._connection = mock_connection
-    mock_fairy.__aenter__.return_value = mock_fairy
+    mock_fairy.__aenter__ = AsyncMock(return_value=mock_fairy)
+    mock_fairy.__aexit__ = AsyncMock()
 
     # Create mock session and result
     mock_session = AsyncMock(spec=AsyncSession)
