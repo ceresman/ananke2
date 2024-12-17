@@ -43,6 +43,7 @@ class MySQLInterface(DatabaseInterface[StructuredData]):
             self._engine, class_=AsyncSession, expire_on_commit=False
         )
 
+        # Create tables in a transaction
         async with self._engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
 

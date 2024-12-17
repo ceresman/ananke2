@@ -26,14 +26,14 @@ def entity_symbol():
                 vector_representation=[0.1, 0.2, 0.3]
             )
         ],
-        propertys=[
+        properties=[
             StructuredData(
                 data_id=UUID('11111111-1111-1111-1111-111111111111'),
                 data_type="property",
                 data_value={"key": "value"}
             )
         ],
-        label=[
+        labels=[
             StructuredData(
                 data_id=UUID('22222222-2222-2222-2222-222222222222'),
                 data_type="label",
@@ -107,11 +107,20 @@ async def test_chroma_interface():
 @pytest.mark.asyncio
 async def test_mysql_interface():
     """Test MySQL interface with mocked connection."""
-    with patch('sqlalchemy.ext.asyncio.create_async_engine') as mock_engine:
-        # Setup mock
-        mock_conn = AsyncMock()
-        mock_engine.return_value = AsyncMock()
-        mock_engine.return_value.begin.return_value.__aenter__.return_value = mock_conn
+    with patch('sqlalchemy.ext.asyncio.create_async_engine') as mock_engine, \
+         patch('sqlalchemy.ext.asyncio.AsyncSession') as mock_session:
+        # Setup mock engine and session
+        mock_engine_instance = AsyncMock()
+        mock_engine.return_value = mock_engine_instance
+
+        # Mock begin context manager
+        mock_begin_ctx = AsyncMock()
+        mock_begin_ctx.__aenter__.return_value = AsyncMock()
+        mock_engine_instance.begin.return_value = mock_begin_ctx
+
+        # Mock session factory
+        mock_session_instance = AsyncMock()
+        mock_session.return_value = mock_session_instance
 
         # Initialize interface
         interface = MySQLInterface(
@@ -146,6 +155,8 @@ async def test_model_serialization(entity_symbol):
     assert "name" in serialized
     assert "descriptions" in serialized
     assert "semantics" in serialized
+    assert "properties" in serialized  # Updated field name
+    assert "labels" in serialized  # Updated field name
     assert isinstance(serialized["semantics"], list)
 
     # Test EntitySemantic serialization
@@ -157,7 +168,7 @@ async def test_model_serialization(entity_symbol):
     assert "vector_representation" in semantic_serialized
 
     # Test StructuredData serialization
-    structured = entity_symbol.propertys[0]
+    structured = entity_symbol.properties[0]  # Updated field name
     structured_serialized = structured.model_dump()
     assert isinstance(structured_serialized, dict)
     assert "data_id" in structured_serialized

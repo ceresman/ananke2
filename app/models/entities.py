@@ -1,8 +1,7 @@
 from uuid import UUID
 from typing import List, Dict, Any, TYPE_CHECKING
 import numpy as np
-import sympy as sp
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from .base import BaseObject
 
 if TYPE_CHECKING:
@@ -10,6 +9,8 @@ if TYPE_CHECKING:
 
 class EntitySemantic(BaseObject):
     """Represents a semantic entity in the knowledge graph."""
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     semantic_id: UUID
     name: str
     vector_representation: List[float]  # Using List[float] instead of np.ndarray for serialization
@@ -22,12 +23,14 @@ class EntitySemantic(BaseObject):
 
 class EntitySymbol(BaseObject):
     """Represents a symbolic entity in the knowledge graph."""
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     symbol_id: UUID
     name: str
     descriptions: List[str]
     semantics: List[EntitySemantic]
-    propertys: List['StructuredData']
-    label: List['StructuredData']
+    properties: List['StructuredData']  # Fixed pluralization
+    labels: List['StructuredData']  # Renamed for consistency
 
     def to_neo4j(self) -> Dict[str, Any]:
         """Special handling for Neo4j graph database."""
@@ -35,5 +38,5 @@ class EntitySymbol(BaseObject):
             'symbol_id': str(self.symbol_id),
             'name': self.name,
             'descriptions': self.descriptions,
-            'labels': [label.data_value for label in self.label]
+            'labels': [label.data_value for label in self.labels]
         }
