@@ -21,7 +21,7 @@ def process_document_workflow(self, document_path: str) -> Dict[str, Any]:
         # Chain document processing tasks using proper Celery chain syntax
         # First task gets argument directly, subsequent tasks receive previous task's output
         workflow = chain(
-            document.process_document.s(str(document_path)),  # Pass document path as positional argument
+            document.process_document.s(str(document_path)),  # Pass as positional arg for unbound task
             document.extract_knowledge_graph.s(),  # Gets result from process_document
             document.extract_content.s()  # Gets result from extract_knowledge_graph
         )
