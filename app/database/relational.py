@@ -4,10 +4,10 @@ from typing import Any, Dict, List, Optional
 from uuid import UUID
 import aiomysql
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy import Column, String, JSON
+from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy import Column, String, JSON, select
 from sqlalchemy.dialects.mysql import BINARY
-from sqlalchemy.ext.declarative import declarative_base
+import asyncio
 
 from .base import DatabaseInterface
 from ..models.structured import StructuredData
@@ -22,10 +22,11 @@ class StructuredDataTable(Base):
     data_type = Column(String(255), nullable=False)
     data_value = Column(JSON, nullable=False)
 
-class MySQLInterface(DatabaseInterface[StructuredData]):
+class AsyncRelationalDatabase(DatabaseInterface[StructuredData]):
     """MySQL database interface implementation."""
 
-    def __init__(self, host: str, port: int, user: str, password: str, database: str):
+    def __init__(self, host: str = "localhost", port: int = 3306,
+                 user: str = "root", password: str = "", database: str = "ananke"):
         """Initialize MySQL interface."""
         self.host = host
         self.port = port
@@ -38,12 +39,30 @@ class MySQLInterface(DatabaseInterface[StructuredData]):
     async def connect(self) -> None:
         """Establish connection to MySQL database."""
         url = f"mysql+aiomysql://{self.user}:{self.password}@{self.host}:{self.port}/{self.database}"
-        self._engine = create_async_engine(url, echo=True)
-        self._session_factory = sessionmaker(
-            self._engine, class_=AsyncSession, expire_on_commit=False
+
+        # Configure engine with proper aiomysql settings
+        self._engine = create_async_engine(
+            url,
+            echo=True,
+            pool_pre_ping=True,
+            pool_recycle=3600,
+            pool_size=20,
+            max_overflow=0,
+            pool_timeout=30,
+            future=True,
+            isolation_level="READ COMMITTED"
         )
 
-        # Create tables in a transaction
+        # Configure session factory for async operations
+        self._session_factory = sessionmaker(
+            bind=self._engine,
+            class_=AsyncSession,
+            expire_on_commit=False,
+            future=True,
+            autoflush=False
+        )
+
+        # Create tables if they don't exist
         async with self._engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
 
@@ -55,27 +74,31 @@ class MySQLInterface(DatabaseInterface[StructuredData]):
     async def create(self, item: StructuredData) -> UUID:
         """Create a new structured data entry in MySQL."""
         async with self._session_factory() as session:
-            db_item = StructuredDataTable(
-                id=item.data_id.bytes,
-                data_type=item.data_type,
-                data_value=item.data_value
-            )
-            session.add(db_item)
-            await session.commit()
+            async with session.begin():
+                db_item = StructuredDataTable(
+                    id=item.data_id.bytes,
+                    data_type=item.data_type,
+                    data_value=item.data_value
+                )
+                session.add(db_item)
             return item.data_id
 
     async def read(self, id: UUID) -> Optional[StructuredData]:
         """Read structured data from MySQL by ID."""
         async with self._session_factory() as session:
-            result = await session.get(StructuredDataTable, id.bytes)
-            if not result:
-                return None
+            async with session.begin():
+                stmt = select(StructuredDataTable).where(StructuredDataTable.id == id.bytes)
+                result = await session.execute(stmt)
+                db_item = result.scalar_one_or_none()
 
-            return StructuredData(
-                data_id=UUID(bytes=result.id),
-                data_type=result.data_type,
-                data_value=result.data_value
-            )
+                if not db_item:
+                    return None
+
+                return StructuredData(
+                    data_id=UUID(bytes=db_item.id),
+                    data_type=db_item.data_type,
+                    data_value=db_item.data_value
+                )
 
     async def update(self, id: UUID, item: StructuredData) -> bool:
         """Update existing structured data in MySQL."""
@@ -103,43 +126,41 @@ class MySQLInterface(DatabaseInterface[StructuredData]):
     async def list(self, skip: int = 0, limit: int = 100) -> List[StructuredData]:
         """List structured data from MySQL with pagination."""
         async with self._session_factory() as session:
-            result = await session.execute(
-                StructuredDataTable.select()
-                .offset(skip)
-                .limit(limit)
-            )
-            rows = result.scalars().all()
+            async with session.begin():
+                stmt = select(StructuredDataTable).offset(skip).limit(limit)
+                result = await session.execute(stmt)
+                rows = result.scalars().all()
 
-            return [
-                StructuredData(
-                    data_id=UUID(bytes=row.id),
-                    data_type=row.data_type,
-                    data_value=row.data_value
-                )
-                for row in rows
-            ]
+                return [
+                    StructuredData(
+                        data_id=UUID(bytes=row.id),
+                        data_type=row.data_type,
+                        data_value=row.data_value
+                    )
+                    for row in rows
+                ]
 
     async def search(self, query: Dict[str, Any]) -> List[StructuredData]:
         """Search for structured data in MySQL using a query dictionary."""
         conditions = []
-        values = {}
 
         if "data_type" in query:
             conditions.append(StructuredDataTable.data_type == query["data_type"])
 
         async with self._session_factory() as session:
-            stmt = StructuredDataTable.select()
-            for condition in conditions:
-                stmt = stmt.where(condition)
+            async with session.begin():
+                stmt = select(StructuredDataTable)
+                for condition in conditions:
+                    stmt = stmt.where(condition)
 
-            result = await session.execute(stmt)
-            rows = result.scalars().all()
+                result = await session.execute(stmt)
+                rows = result.scalars().all()
 
-            return [
-                StructuredData(
-                    data_id=UUID(bytes=row.id),
-                    data_type=row.data_type,
-                    data_value=row.data_value
-                )
-                for row in rows
-            ]
+                return [
+                    StructuredData(
+                        data_id=UUID(bytes=row.id),
+                        data_type=row.data_type,
+                        data_value=row.data_value
+                    )
+                    for row in rows
+                ]

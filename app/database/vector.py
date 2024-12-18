@@ -9,7 +9,7 @@ import numpy as np
 from .base import DatabaseInterface
 from ..models.entities import EntitySemantic
 
-class ChromaInterface(DatabaseInterface[EntitySemantic]):
+class AsyncVectorDatabase(DatabaseInterface[EntitySemantic]):
     """Chroma vector database interface implementation."""
 
     def __init__(self, host: str = "localhost", port: int = 8000, collection_name: str = "default"):

@@ -10,7 +10,7 @@ from ..models.entities import EntitySymbol
 from ..models.relations import RelationSymbol
 from ..models.triples import TripleSymbol
 
-class Neo4jInterface(DatabaseInterface[EntitySymbol]):
+class AsyncGraphDatabase(DatabaseInterface[EntitySymbol]):
     """Neo4j database interface implementation."""
 
     def __init__(self, uri: str, username: str, password: str):
@@ -73,6 +73,7 @@ class Neo4jInterface(DatabaseInterface[EntitySymbol]):
                 symbol_id=UUID(entity["id"]),
                 name=entity["name"],
                 descriptions=entity["descriptions"],
+                entity_type="ENTITY",  # Add default entity type
                 semantics=[],  # Load semantics separately
                 properties=[],  # Updated from propertys
                 labels=[]  # Updated from label
@@ -136,6 +137,7 @@ class Neo4jInterface(DatabaseInterface[EntitySymbol]):
                     symbol_id=UUID(record["e"]["id"]),
                     name=record["e"]["name"],
                     descriptions=record["e"]["descriptions"],
+                    entity_type="ENTITY",  # Add default entity type
                     semantics=[],
                     properties=[],
                     labels=[]
@@ -169,6 +171,7 @@ class Neo4jInterface(DatabaseInterface[EntitySymbol]):
                     symbol_id=UUID(record["e"]["id"]),
                     name=record["e"]["name"],
                     descriptions=record["e"]["descriptions"],
+                    entity_type="ENTITY",  # Add default entity type
                     semantics=[],
                     propertys=[],
                     label=[]
