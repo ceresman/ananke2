@@ -50,8 +50,10 @@ def get_relational_db():
     return db
 
 @shared_task(name='document.process_document')
-def process_document(document_path: str) -> dict:
+def process_document(*args, **kwargs) -> dict:
     """Process PDF document and extract text content."""
+    # Handle both positional and keyword arguments
+    document_path = kwargs.get('document_path') if 'document_path' in kwargs else args[0]
     print(f"Starting document processing for {document_path}")
     if not os.path.exists(document_path):
         raise FileNotFoundError(f"PDF file not found: {document_path}")
@@ -81,8 +83,10 @@ def process_document(document_path: str) -> dict:
         raise Exception(f"Error processing document: {str(e)}")
 
 @shared_task(name='document.extract_knowledge_graph')
-def extract_knowledge_graph(result: dict) -> dict:
+def extract_knowledge_graph(*args, **kwargs) -> dict:
     """Extract knowledge graph from document text."""
+    # Handle both positional and dictionary input
+    result = kwargs if kwargs else args[0]
     doc_id = result['doc_id']
     print(f"Starting knowledge graph extraction for document {doc_id}")
     try:
@@ -143,8 +147,10 @@ def extract_knowledge_graph(result: dict) -> dict:
         raise Exception(f"Error extracting knowledge graph: {str(e)}")
 
 @shared_task(name='document.extract_content')
-def extract_content(result: dict) -> dict:
+def extract_content(*args, **kwargs) -> dict:
     """Extract and store content in vector and relational databases."""
+    # Handle both positional and dictionary input
+    result = kwargs if kwargs else args[0]
     print(f"Starting content extraction for document {result['doc_id']}")
     try:
         doc_id = result['doc_id']
