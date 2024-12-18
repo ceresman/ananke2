@@ -1,0 +1,32 @@
+[tool.poetry]
+name = "ananke2"
+version = "0.1.0"
+description = "Knowledge structuring network storage system"
+authors = ["Devin AI <158243242+devin-ai-integration[bot]@users.noreply.github.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.12"
+fastapi = {extras = ["standard"], version = "^0.115.6"}
+psycopg = {extras = ["binary"], version = "^3.2.3"}
+numpy = "1.26.4"
+sympy = "^1.13.3"
+pydantic = "^2.10.3"
+neo4j = "^5.18.0"
+chromadb = "^0.4.24"
+aiomysql = "^0.2.0"
+sqlalchemy = {extras = ["asyncio"], version = "^2.0.27"}
+sqlalchemy-utils = "^0.41.2"
+redis = "^5.0.1"
+celery = {extras = ["redis"], version = "^5.3.6"}
+flower = "^2.0.1"
+pydantic-settings = "^2.7.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.3.4"
+pytest-asyncio = "^0.25.0"
+pytest-cov = "^6.0.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
