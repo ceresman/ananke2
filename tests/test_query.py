@@ -58,22 +58,23 @@ def query(mock_databases, mock_entity, mock_doc):
     """Create a CrossDatabaseQuery instance with mock databases."""
     vector_db, graph_db, mysql_db = mock_databases
 
-    async def mock_init():
-        return vector_db, graph_db, mysql_db
-
     # Set up mock returns
     vector_db.search = AsyncMock(return_value=[mock_doc])
     graph_db.search = AsyncMock(return_value=[mock_entity])
     mysql_db.search = AsyncMock(return_value=[mock_doc])
     mysql_db.get = AsyncMock(return_value=mock_doc)
 
-    query = CrossDatabaseQuery()
-    query.vector_db = vector_db
-    query.graph_db = graph_db
-    query.mysql_db = mysql_db
-    query.qwen_client = AsyncMock()
-    query.qwen_client.generate_embeddings = AsyncMock(return_value=[0.1, 0.2, 0.3])
+    # Create mock Qwen client
+    qwen_client = AsyncMock()
+    qwen_client.generate_embeddings = AsyncMock(return_value=[0.1, 0.2, 0.3])
 
+    # Create query instance with mocked dependencies
+    query = CrossDatabaseQuery(
+        vector_db=vector_db,
+        graph_db=graph_db,
+        mysql_db=mysql_db,
+        qwen_client=qwen_client
+    )
     return query
 
 @pytest.mark.asyncio

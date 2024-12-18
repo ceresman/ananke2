@@ -14,16 +14,28 @@ from .relational import MySQLInterface
 class CrossDatabaseQuery:
     """Cross-database query interface supporting semantic, graph, and structured queries."""
 
-    def __init__(self):
+    def __init__(
+        self,
+        vector_db: Optional[ChromaInterface] = None,
+        graph_db: Optional[Neo4jInterface] = None,
+        mysql_db: Optional[MySQLInterface] = None,
+        qwen_client: Optional[QwenClient] = None
+    ):
         """Initialize database interfaces."""
-        self.vector_db = ChromaInterface()
-        self.graph_db = Neo4jInterface(
+        self.vector_db = vector_db or ChromaInterface()
+        self.graph_db = graph_db or Neo4jInterface(
             uri=settings.NEO4J_URI,
             username=settings.NEO4J_USER,
             password=settings.NEO4J_PASSWORD
         )
-        self.mysql_db = MySQLInterface()
-        self.qwen_client = QwenClient()
+        self.mysql_db = mysql_db or MySQLInterface(
+            host=settings.MYSQL_HOST,
+            port=settings.MYSQL_PORT,
+            user=settings.MYSQL_USER,
+            password=settings.MYSQL_PASSWORD,
+            database=settings.MYSQL_DATABASE
+        )
+        self.qwen_client = qwen_client or QwenClient()
 
     async def search_by_embedding(
         self,
