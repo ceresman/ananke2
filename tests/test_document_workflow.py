@@ -105,8 +105,8 @@ async def test_document_processing():
         print("Failed to connect to databases")
         return False
 
-    # Download test paper if not exists
-    test_paper_path = Path("/app/data/test_paper.pdf")
+    # Check for test paper
+    test_paper_path = Path("tests/data/sample.pdf")
     if not test_paper_path.exists():
         print("Downloading test paper...")
         os.system(f"curl -o {test_paper_path} https://arxiv.org/pdf/2404.16130")
