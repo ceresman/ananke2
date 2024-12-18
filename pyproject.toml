@@ -20,6 +20,7 @@ sqlalchemy-utils = "^0.41.2"
 redis = "^5.0.1"
 celery = {extras = ["redis"], version = "^5.3.6"}
 flower = "^2.0.1"
+pydantic-settings = "^2.7.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.4"
