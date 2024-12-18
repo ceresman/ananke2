@@ -37,11 +37,11 @@ services:
       - MYSQL_PASSWORD=${MYSQL_PASSWORD:-anankepass}
     command: --default-authentication-plugin=mysql_native_password --bind-address=0.0.0.0
     healthcheck:
-      test: ["CMD", "mysql", "-h", "localhost", "-u", "ananke", "-panankepass", "-e", "SELECT 1;"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
       interval: 10s
       timeout: 5s
-      retries: 30
-      start_period: 60s
+      retries: 5
+      start_period: 30s
 
   redis:
     image: redis:7
