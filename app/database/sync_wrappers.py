@@ -4,19 +4,42 @@ import asyncio
 from typing import List, Optional, Dict, Any
 from ..models.entities import Entity, Relationship
 
+def run_async(coro):
+    """Run an async coroutine in a sync context."""
+    try:
+        # Try to get the current event loop
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            # If we're in an async context, create a new loop
+            new_loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(new_loop)
+            try:
+                return new_loop.run_until_complete(coro)
+            finally:
+                new_loop.close()
+                asyncio.set_event_loop(loop)
+        else:
+            # If we're not in an async context, use the current loop
+            return loop.run_until_complete(coro)
+    except RuntimeError:
+        # If there's no event loop, create one
+        return asyncio.run(coro)
+
 class GraphDatabase:
     """Synchronous wrapper for Neo4j interface."""
 
-    def __init__(self):
+    def __init__(self, uri: str, username: str, password: str):
         """Initialize Neo4j interface."""
         from .graph import AsyncGraphDatabase
-        from ..config import settings
+        # Replace localhost with neo4j in URI if needed
+        if "localhost" in uri:
+            uri = uri.replace("localhost", "neo4j")
         self._async_db = AsyncGraphDatabase(
-            uri=settings.NEO4J_URI,
-            username=settings.NEO4J_USER,
-            password=settings.NEO4J_PASSWORD
+            uri=uri,
+            username=username,
+            password=password
         )
-        asyncio.run(self._async_db.connect())
+        run_async(self._async_db.connect())
 
     def store_entity(self, entity: Entity) -> None:
         """Store an entity in the graph database."""
@@ -29,7 +52,7 @@ class GraphDatabase:
             properties=[],
             labels=[]
         )
-        asyncio.run(self._async_db.create(entity_symbol))
+        run_async(self._async_db.create(entity_symbol))
 
     def store_relationship(self, rel: Relationship) -> None:
         """Store a relationship in the graph database."""
@@ -41,11 +64,11 @@ class GraphDatabase:
             descriptions=[rel.relationship],
             strength=rel.relationship_strength
         )
-        asyncio.run(self._async_db.create(rel_symbol))
+        run_async(self._async_db.create(rel_symbol))
 
     def get_entity(self, name: str) -> Optional[Entity]:
         """Get an entity by name."""
-        entities = asyncio.run(self._async_db.search({"name": name}))
+        entities = run_async(self._async_db.search({"name": name}))
         if not entities:
             return None
         entity = entities[0]
@@ -57,7 +80,7 @@ class GraphDatabase:
 
     def get_relationship(self, source: str, target: str) -> Optional[Relationship]:
         """Get a relationship between two entities."""
-        rels = asyncio.run(self._async_db.search({
+        rels = run_async(self._async_db.search({
             "source": source,
             "target": target
         }))
@@ -73,7 +96,7 @@ class GraphDatabase:
 
     def list_entities(self) -> List[Entity]:
         """List all entities in the database."""
-        entities = asyncio.run(self._async_db.list())
+        entities = run_async(self._async_db.list())
         return [
             Entity(
                 name=e.name,
@@ -85,7 +108,7 @@ class GraphDatabase:
 
     def list_relationships(self) -> List[Relationship]:
         """List all relationships in the database."""
-        rels = asyncio.run(self._async_db.list())
+        rels = run_async(self._async_db.list())
         return [
             Relationship(
                 source=r.source,
@@ -99,15 +122,15 @@ class GraphDatabase:
 class VectorDatabase:
     """Synchronous wrapper for ChromaDB interface."""
 
-    def __init__(self):
+    def __init__(self, host: str, port: int, collection_name: str = "ananke2"):
         """Initialize ChromaDB interface."""
         from .vector import AsyncVectorDatabase
-        from ..config import settings
         self._async_db = AsyncVectorDatabase(
-            host=settings.CHROMA_HOST,
-            port=settings.CHROMA_PORT
+            host=host,
+            port=port,
+            collection_name=collection_name
         )
-        asyncio.run(self._async_db.connect())
+        run_async(self._async_db.connect())
 
     def store_embedding(self, id: str, embedding: List[float], metadata: Dict[str, Any]) -> None:
         """Store an embedding with metadata."""
@@ -116,11 +139,11 @@ class VectorDatabase:
             name=id,
             vector_representation=embedding
         )
-        asyncio.run(self._async_db.create(semantic))
+        run_async(self._async_db.create(semantic))
 
     def get_embedding(self, id: str) -> Optional[Dict[str, Any]]:
         """Get an embedding by ID."""
-        result = asyncio.run(self._async_db.read(id))
+        result = run_async(self._async_db.read(id))
         if not result:
             return None
         return {
@@ -131,7 +154,7 @@ class VectorDatabase:
 
     def list_embeddings(self) -> List[Dict[str, Any]]:
         """List all embeddings in the database."""
-        results = asyncio.run(self._async_db.list())
+        results = run_async(self._async_db.list())
         return [
             {
                 "id": str(r.semantic_id),
@@ -144,18 +167,25 @@ class VectorDatabase:
 class RelationalDatabase:
     """Synchronous wrapper for MySQL interface."""
 
-    def __init__(self):
+    def __init__(self, uri: str = None, username: str = None, password: str = None,
+                 host: str = None, port: int = None, database: str = None):
         """Initialize MySQL interface."""
         from .relational import AsyncRelationalDatabase
         from ..config import settings
+
+        # Support both URI-style and individual parameter initialization
+        if uri:
+            host, port = uri.split(":")
+            port = int(port)
+
         self._async_db = AsyncRelationalDatabase(
-            host=settings.MYSQL_HOST,
-            port=settings.MYSQL_PORT,
-            user=settings.MYSQL_USER,
-            password=settings.MYSQL_PASSWORD,
-            database=settings.MYSQL_DATABASE
+            host=host,
+            port=port,
+            user=username,
+            password=password,
+            database=database or settings.MYSQL_DATABASE
         )
-        asyncio.run(self._async_db.connect())
+        run_async(self._async_db.connect())
 
     def store_document(self, data: Dict[str, Any]) -> str:
         """Store a document and return its ID."""
@@ -164,24 +194,24 @@ class RelationalDatabase:
             data_type="document",
             data_value=data
         )
-        doc_id = asyncio.run(self._async_db.create(doc))
+        doc_id = run_async(self._async_db.create(doc))
         return str(doc_id)
 
     def get_document(self, doc_id: str) -> Optional[Dict[str, Any]]:
         """Get a document by ID."""
-        result = asyncio.run(self._async_db.read(doc_id))
+        result = run_async(self._async_db.read(doc_id))
         if not result:
             return None
         return result.data_value
 
     def update_document(self, doc_id: str, data: Dict[str, Any]) -> None:
         """Update a document's data."""
-        doc = asyncio.run(self._async_db.read(doc_id))
+        doc = run_async(self._async_db.read(doc_id))
         if doc:
             doc.data_value.update(data)
-            asyncio.run(self._async_db.update(doc_id, doc))
+            run_async(self._async_db.update(doc_id, doc))
 
     def list_documents(self) -> List[Dict[str, Any]]:
         """List all documents in the database."""
-        results = asyncio.run(self._async_db.list())
+        results = run_async(self._async_db.list())
         return [r.data_value for r in results]

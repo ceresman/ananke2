@@ -27,9 +27,9 @@ Return only the JSON list, no other text."""
 class QwenClient:
     """Client for interacting with Qwen API."""
 
-    def __init__(self):
+    def __init__(self, api_key: Optional[str] = None):
         """Initialize Qwen client with API configuration."""
-        self.api_key = settings.qwen_api_key
+        self.api_key = api_key or settings.QWEN_API_KEY
         self.base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
         self.client = OpenAI(
             api_key=self.api_key,
@@ -119,7 +119,7 @@ class QwenClient:
         return results
 
     async def generate_embeddings(self, text: str, modality: str = "text") -> List[float]:
-        """Generate embeddings using Qwen model."""
+        """Generate embeddings using Qwen text-embedding-v3 model."""
         if not text.strip():
             raise ValueError("Input text cannot be empty")
 
@@ -128,7 +128,7 @@ class QwenClient:
             try:
                 response = self.client.embeddings.create(
                     input=text,
-                    model="qwen"
+                    model="text-embedding-v3"
                 )
                 return response.data[0].embedding
 

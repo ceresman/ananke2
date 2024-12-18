@@ -4,6 +4,14 @@ from typing import List, Dict, Any, Optional
 from pydantic import Field, ConfigDict
 from .base import BaseObject
 
+class StructuredDataBase(BaseObject):
+    """Base class for structured data."""
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    data_id: UUID
+    data_type: str
+    data_value: Dict[str, Any]
+
 class SemanticBase(BaseObject):
     """Base class for semantic information."""
     model_config = ConfigDict(arbitrary_types_allowed=True)

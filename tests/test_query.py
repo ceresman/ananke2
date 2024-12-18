@@ -9,6 +9,7 @@ from app.models.entities import EntitySymbol, EntitySemantic
 from app.database.vector import ChromaInterface
 from app.database.graph import Neo4jInterface
 from app.database.relational import MySQLInterface
+from app.models.types import StructuredDataBase
 
 @pytest.fixture
 def mock_databases():
@@ -33,10 +34,20 @@ def mock_entity():
                 semantic_value="Test semantic value"
             )
         ],
-        properties={
-            "test_prop": "test_value"
-        },
-        labels=["TEST"]
+        properties=[
+            StructuredDataBase(
+                data_id=uuid4(),
+                data_type="property",
+                data_value={"test_prop": "test_value"}
+            )
+        ],
+        labels=[
+            StructuredDataBase(
+                data_id=uuid4(),
+                data_type="label",
+                data_value={"label": "TEST"}
+            )
+        ]
     )
 
 @pytest.fixture

@@ -129,3 +129,11 @@ class AsyncVectorDatabase(DatabaseInterface[EntitySemantic]):
                 result["embeddings"]
             )
         ]
+
+    async def get_all_embeddings(self) -> List[Dict[str, Any]]:
+        """Get all embeddings from the database."""
+        if not self._collection:
+            raise ConnectionError("Not connected to database")
+        results = self._collection.get()
+        return [{"id": id, "embedding": embedding, "metadata": metadata}
+                for id, embedding, metadata in zip(results["ids"], results["embeddings"], results["metadatas"])]

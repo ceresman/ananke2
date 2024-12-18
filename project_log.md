@@ -46,12 +46,20 @@
 - Test Data: Sample text about Central Institution and Market Strategy Committee
 
 ### Test Results (Updated 2024-03-18)
-- All 7 test cases passing successfully
-- Rate limiting mechanism verified with exponential backoff (3 retries)
-- Relationship strength validation improved with type checking
-- Error handling enhanced for API failures and invalid inputs
-- Integration with Redis task queue verified
-- Test coverage includes all critical paths
+# Test Results
+- Knowledge Graph Tests: ✓ All 7 tests passed
+  - Entity extraction tests
+  - Relationship extraction tests
+  - Error handling tests
+  - Integration tests
+- Database Query Tests: ✓ All 6 tests passed
+  - search_by_embedding: ✓ Passed
+  - search_by_graph: ✓ Passed
+  - search_structured: ✓ Passed
+  - combined_search: ✓ Passed
+  - search_with_modality: ✓ Passed
+  - error_handling: ✓ Passed
+- Rate limiting and validation tests verified
 
 ### Recent Improvements
 - Enhanced rate limiting logic with proper retry counting

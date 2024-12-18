@@ -18,10 +18,16 @@ aiomysql = "^0.2.0"
 sqlalchemy = {extras = ["asyncio"], version = "^2.0.27"}
 sqlalchemy-utils = "^0.41.2"
 redis = "^5.0.1"
-celery = {extras = ["redis"], version = "^5.3.6"}
+celery = {extras = ["redis"], version = "^5.4.0"}
 flower = "^2.0.1"
 pydantic-settings = "^2.7.0"
 openai = "^1.58.1"
+pymupdf = "^1.25.1"
+neo4j-driver = "^5.27.0"
+mysql-connector-python = "^9.1.0"
+cryptography = "^44.0.0"
+requests = "^2.32.3"
+pymysql = "^1.1.1"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.4"

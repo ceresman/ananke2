@@ -1,27 +1,24 @@
+"""Structured data models."""
 from uuid import UUID
 from typing import List, Dict, Any, TYPE_CHECKING
 from pydantic import Field, ConfigDict
 from .base import BaseObject
 from .expressions import LogicExpression, MathExpression
-from .triples import TripleSymbol
-from .entities import EntitySymbol
-from .relations import RelationSymbol
+from .types import StructuredDataBase
 
-class StructuredData(BaseObject):
+if TYPE_CHECKING:
+    from .entities import EntitySymbol
+    from .relations import RelationSymbol
+    from .triples import TripleSymbol
+else:
+    # Runtime imports for Pydantic
+    from .entities import EntitySymbol
+    from .relations import RelationSymbol
+    from .triples import TripleSymbol
+
+class StructuredData(StructuredDataBase):
     """Represents structured data."""
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
-    data_id: UUID
-    data_type: str
-    data_value: Dict[str, Any]
-
-    def to_mysql(self) -> Dict[str, Any]:
-        """Special handling for MySQL database."""
-        return {
-            'data_id': str(self.data_id),
-            'data_type': self.data_type,
-            'data_value': self.data_value
-        }
+    pass
 
 class StructuredSentence(BaseObject):
     """Represents a structured sentence within a chunk."""
@@ -67,7 +64,7 @@ class Document(BaseObject):
     meta: StructuredData
     meta_embedding: List[float] = Field(default_factory=list)
     raw_content: str
-    StructuredChunks: List[StructuredChunk] = Field(default_factory=list)
+    structured_chunks: List[StructuredChunk] = Field(default_factory=list)
 
     def to_chroma(self) -> Dict[str, Any]:
         """Special handling for Chroma vector database."""
@@ -79,7 +76,7 @@ class Document(BaseObject):
             }
         }
 
-# Update forward references
+# Update forward references after all models are defined
 Document.model_rebuild()
 StructuredChunk.model_rebuild()
 StructuredSentence.model_rebuild()

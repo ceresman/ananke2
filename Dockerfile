@@ -10,20 +10,26 @@ RUN apt-get update && apt-get install -y \
     curl \
     git \
     poppler-utils \
+    libmagic1 \
+    libssl-dev \
+    libffi-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Poetry and add to PATH
+# Install Poetry
 ENV POETRY_HOME=/opt/poetry
-ENV PATH="/opt/poetry/bin:$PATH"
 RUN curl -sSL https://install.python-poetry.org | python3 - && \
+    cd /usr/local/bin && \
+    ln -s /opt/poetry/bin/poetry && \
     poetry config virtualenvs.create false
 
-# Copy project files
+# Copy Poetry files
 COPY pyproject.toml poetry.lock ./
-COPY app ./app/
 
 # Install dependencies
 RUN poetry install --no-interaction --no-ansi
+
+# Copy application code
+COPY . .
 
 # Set environment variables
 ENV PYTHONPATH=/app
