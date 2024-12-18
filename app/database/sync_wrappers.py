@@ -210,3 +210,36 @@ class RelationalDatabase:
         """List all documents in the database."""
         results = run_async(self._async_db.list())
         return [r.data_value for r in results]
+
+
+def get_sync_relational_db():
+    """Get synchronous relational database interface."""
+    from ..config import settings
+    db = RelationalDatabase(
+        host=settings.MYSQL_HOST,
+        port=settings.MYSQL_PORT,
+        user=settings.MYSQL_USER,
+        password=settings.MYSQL_PASSWORD,
+        database=settings.MYSQL_DATABASE
+    )
+    return db
+
+def get_sync_vector_db():
+    """Get synchronous vector database interface."""
+    from ..config import settings
+    db = VectorDatabase(
+        host=settings.CHROMA_HOST,
+        port=settings.CHROMA_PORT,
+        collection_name=settings.CHROMA_COLLECTION
+    )
+    return db
+
+def get_sync_graph_db():
+    """Get synchronous graph database interface."""
+    from ..config import settings
+    db = GraphDatabase(
+        uri=settings.NEO4J_URI,
+        username=settings.NEO4J_USER,
+        password=settings.NEO4J_PASSWORD
+    )
+    return db
