@@ -10,15 +10,13 @@ from app.database.vector import ChromaInterface
 from app.database.graph import Neo4jInterface
 from app.database.relational import MySQLInterface
 
-Document.model_rebuild()
-
 @pytest.fixture
 def mock_databases():
     """Create mock database interfaces."""
-    chroma = Mock(spec=ChromaInterface)
-    neo4j = Mock(spec=Neo4jInterface)
-    mysql = Mock(spec=MySQLInterface)
-    return chroma, neo4j, mysql
+    vector_db = AsyncMock(spec=ChromaInterface)
+    graph_db = AsyncMock(spec=Neo4jInterface)
+    mysql_db = AsyncMock(spec=MySQLInterface)
+    return vector_db, graph_db, mysql_db
 
 @pytest.fixture
 def mock_entity():
@@ -42,15 +40,9 @@ def mock_entity():
     )
 
 @pytest.fixture
-def query(mock_databases):
-    """Create a CrossDatabaseQuery instance with mock databases."""
-    chroma, neo4j, mysql = mock_databases
-
-    async def mock_init():
-        return chroma, neo4j, mysql
-
-    # Create mock search results
-    mock_doc = Document(
+def mock_doc():
+    """Create a mock document for testing."""
+    return Document(
         id=uuid4(),
         meta=StructuredData(
             data_id=uuid4(),
@@ -61,47 +53,63 @@ def query(mock_databases):
         raw_content="Test content"
     )
 
-    chroma.search_by_embedding = AsyncMock(return_value=[mock_doc])
-    neo4j.search_by_entity_type = AsyncMock(return_value=[mock_entity()])
-    mysql.search_structured = AsyncMock(return_value=[mock_doc])
+@pytest.fixture
+def query(mock_databases, mock_entity, mock_doc):
+    """Create a CrossDatabaseQuery instance with mock databases."""
+    vector_db, graph_db, mysql_db = mock_databases
+
+    async def mock_init():
+        return vector_db, graph_db, mysql_db
+
+    # Set up mock returns
+    vector_db.search = AsyncMock(return_value=[mock_doc])
+    graph_db.search = AsyncMock(return_value=[mock_entity])
+    mysql_db.search = AsyncMock(return_value=[mock_doc])
+    mysql_db.get = AsyncMock(return_value=mock_doc)
 
     query = CrossDatabaseQuery()
-    query._init_databases = mock_init
+    query.vector_db = vector_db
+    query.graph_db = graph_db
+    query.mysql_db = mysql_db
+    query.qwen_client = AsyncMock()
+    query.qwen_client.generate_embeddings = AsyncMock(return_value=[0.1, 0.2, 0.3])
+
     return query
 
 @pytest.mark.asyncio
-async def test_search_by_embedding(query):
+async def test_search_by_embedding(query, mock_doc):
     """Test searching by embedding vector."""
     results = await query.search_by_embedding("test query")
     assert len(results) > 0
     assert isinstance(results[0], Document)
 
 @pytest.mark.asyncio
-async def test_search_by_graph(query):
+async def test_search_by_graph(query, mock_entity):
     """Test searching by graph entity type."""
-    results = await query.search_by_graph("TECHNOLOGY")
+    results = await query.search_by_graph(entity_type="TECHNOLOGY")
     assert len(results) > 0
     assert isinstance(results[0], EntitySymbol)
 
 @pytest.mark.asyncio
-async def test_search_structured(query):
+async def test_search_structured(query, mock_doc):
     """Test searching structured data."""
     results = await query.search_structured({"test": "value"})
     assert len(results) > 0
     assert isinstance(results[0], Document)
 
 @pytest.mark.asyncio
-async def test_combined_search(query):
+async def test_combined_search(query, mock_doc):
     """Test combined search across all databases."""
     results = await query.combined_search(
         query_text="test",
         entity_type="TECHNOLOGY",
-        structured_filter={"test": "value"}
+        filters={"test": "value"}
     )
     assert len(results) > 0
+    assert isinstance(results[0], Document)
 
 @pytest.mark.asyncio
-async def test_search_with_modality(query):
+async def test_search_with_modality(query, mock_doc):
     """Test searching with specific modality."""
     results = await query.search_by_embedding(
         "test query",
@@ -113,11 +121,6 @@ async def test_search_with_modality(query):
 @pytest.mark.asyncio
 async def test_error_handling(query):
     """Test error handling in search operations."""
-    # Mock an error in the database
-    query._chroma.search_by_embedding = AsyncMock(
-        side_effect=Exception("Test error")
-    )
-
-    # Should return empty list on error
-    results = await query.search_by_embedding("test query")
-    assert len(results) == 0
+    query.vector_db.search = AsyncMock(side_effect=Exception("Test error"))
+    with pytest.raises(Exception):
+        await query.search_by_embedding("test query")
