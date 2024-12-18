@@ -39,15 +39,30 @@ def get_vector_db():
 
 @lru_cache()
 def get_relational_db():
-    """Get or create relational database connection."""
-    db = RelationalDatabase(
-        host=settings.get_mysql_host(),
-        port=settings.MYSQL_PORT,
-        user=settings.MYSQL_USER,
-        password=settings.MYSQL_PASSWORD,
-        database=settings.MYSQL_DATABASE
+    """Get synchronous relational database interface."""
+    from ..database.sync_wrappers import get_sync_relational_db
+    return get_sync_relational_db()
+
+def get_vector_db():
+    """Get synchronous vector database interface."""
+    from chromadb.api.models.Collection import Collection
+    from chromadb.config import Settings
+    import chromadb
+    from ..config import settings
+
+    client = chromadb.HttpClient(host=settings.CHROMA_HOST, port=settings.CHROMA_PORT)
+    return client.get_or_create_collection(settings.CHROMA_COLLECTION)
+
+def get_graph_db():
+    """Get synchronous graph database interface."""
+    from neo4j import GraphDatabase
+    from ..config import settings
+
+    driver = GraphDatabase.driver(
+        settings.NEO4J_URI,
+        auth=(settings.NEO4J_USER, settings.NEO4J_PASSWORD)
     )
-    return db
+    return driver.session()
 
 @shared_task(name='document.process_document')
 def process_document(document_path: str) -> dict:
@@ -68,11 +83,19 @@ def process_document(document_path: str) -> dict:
         # Store document metadata
         print("Storing document in relational database...")
         rel_db = get_relational_db()
-        doc_id = rel_db.store_document({
-            "path": document_path,
-            "content": text,
-            "status": "processed"
-        })
+        from uuid import uuid4
+        doc_id = uuid4()
+        doc_data = {
+            "data_id": doc_id,
+            "data_type": "document",
+            "data_value": {
+                "path": document_path,
+                "content": text,
+                "status": "processed",
+                "type": "document"
+            }
+        }
+        rel_db.store_document(doc_data)
         print(f"Document stored with ID: {doc_id}")
 
         return {"doc_id": str(doc_id), "text": text}
