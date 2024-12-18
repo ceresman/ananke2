@@ -167,22 +167,17 @@ class VectorDatabase:
 class RelationalDatabase:
     """Synchronous wrapper for MySQL interface."""
 
-    def __init__(self, uri: str = None, username: str = None, password: str = None,
-                 host: str = None, port: int = None, database: str = None):
+    def __init__(self, host: str = None, port: int = None, user: str = None,
+                 password: str = None, database: str = None):
         """Initialize MySQL interface."""
         from .relational import AsyncRelationalDatabase
         from ..config import settings
 
-        # Support both URI-style and individual parameter initialization
-        if uri:
-            host, port = uri.split(":")
-            port = int(port)
-
         self._async_db = AsyncRelationalDatabase(
-            host=host,
-            port=port,
-            user=username,
-            password=password,
+            host=host or settings.MYSQL_HOST,
+            port=port or settings.MYSQL_PORT,
+            user=user or settings.MYSQL_USER,
+            password=password or settings.MYSQL_PASSWORD,
             database=database or settings.MYSQL_DATABASE
         )
         run_async(self._async_db.connect())
