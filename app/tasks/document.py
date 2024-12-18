@@ -4,6 +4,7 @@ from typing import Dict, Any, Union
 from celery import states
 from . import celery_app
 from ..models.structured import Document
+from ..utils.qwen import QwenClient
 
 @celery_app.task(bind=True)
 def process_document(self, document_id: str) -> Dict[str, Any]:
@@ -92,6 +93,37 @@ def process_math_expressions(content_result: Dict[str, Any]) -> Dict[str, Any]:
             "status": "completed",
             "document_id": document_id,
             "result": "Mathematical expressions processed successfully"
+        }
+    except Exception as e:
+        return {
+            "status": "failed",
+            "document_id": document_id,
+            "error": str(e)
+        }
+
+@celery_app.task
+def extract_knowledge_graph(content_result: Dict[str, Any]) -> Dict[str, Any]:
+    """Extract knowledge graph from document content.
+
+    Args:
+        content_result: Result dict from previous task containing document_id and content
+
+    Returns:
+        Dict containing extraction status, document_id, entities, and result/error message
+    """
+    try:
+        document_id = content_result.get('document_id')
+        content = content_result.get('content', '')
+
+        # Initialize Qwen client and extract entities
+        client = QwenClient()
+        entities = client.extract_entities(content)
+
+        return {
+            "status": "completed",
+            "document_id": document_id,
+            "entities": entities,
+            "result": "Knowledge graph extracted successfully"
         }
     except Exception as e:
         return {
