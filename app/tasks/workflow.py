@@ -19,11 +19,10 @@ def process_document_workflow(self, document_path: str) -> Dict[str, Any]:
                          meta={'progress': 0, 'current_operation': 'Starting document processing'})
 
         # Chain document processing tasks using proper Celery chain syntax
-        # First task gets argument directly, subsequent tasks receive previous task's output
         workflow = chain(
-            document.process_document.s(document_path=str(document_path)),  # Pass as kwarg
-            document.extract_knowledge_graph.s(),  # Gets result from process_document
-            document.extract_content.s()  # Gets result from extract_knowledge_graph
+            document.process_document.s(document_path=document_path),
+            document.extract_knowledge_graph.s(),
+            document.extract_content.s()
         )
         result = workflow.apply_async()
 
