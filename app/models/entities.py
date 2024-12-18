@@ -29,6 +29,7 @@ class EntitySymbol(BaseObject):
 
     symbol_id: UUID
     name: str
+    entity_type: str
     descriptions: List[str]
     semantics: List[EntitySemantic]
     properties: List[StructuredData]  # Fixed pluralization

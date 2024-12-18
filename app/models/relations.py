@@ -23,6 +23,7 @@ class RelationSymbol(BaseObject):
     description: str
     semantics: RelationSemantic
     hit_count: int
+    relationship_strength: int
 
     def to_neo4j(self) -> Dict[str, Any]:
         """Special handling for Neo4j graph database."""

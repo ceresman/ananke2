@@ -15,6 +15,7 @@ def process_document_workflow(document_id: str):
     return chain(
         document.process_document.s(document_id),
         document.extract_content.s(),
+        document.extract_knowledge_graph.s(),
         document.process_math_expressions.s()
     )
 

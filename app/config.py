@@ -1,6 +1,7 @@
 """Configuration settings for Ananke2."""
 
 from pydantic_settings import BaseSettings
+from pydantic import Field
 
 class Settings(BaseSettings):
     """Application settings."""
@@ -30,6 +31,12 @@ class Settings(BaseSettings):
     # Celery settings
     CELERY_BROKER_URL: str = "redis://0.0.0.0:6379/0"  # Using local Redis instance
     CELERY_RESULT_BACKEND: str = "redis://0.0.0.0:6379/0"
+
+    # Qwen API settings
+    qwen_api_key: str = Field(
+        default="sk-46e78b90eb8e4d6ebef79f265891f238",
+        description="API key for Qwen model"
+    )
 
     class Config:
         """Pydantic config."""
