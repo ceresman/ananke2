@@ -49,8 +49,8 @@ def get_relational_db():
     )
     return db
 
-@shared_task(name='document.process_document')
-def process_document(document_path: str) -> str:
+@shared_task(name='document.process_document', bind=True)
+def process_document(self, document_path: str) -> str:
     """Process PDF document and extract text content."""
     print(f"Starting document processing for {document_path}")
     if not os.path.exists(document_path):
@@ -75,15 +75,14 @@ def process_document(document_path: str) -> str:
         })
         print(f"Document stored with ID: {doc_id}")
 
-        return str(doc_id)
+        return {"doc_id": str(doc_id)}
     except Exception as e:
         print(f"Error in process_document: {str(e)}")
         raise Exception(f"Error processing document: {str(e)}")
 
-@shared_task(name='document.extract_knowledge_graph')
-def extract_knowledge_graph(result: dict) -> dict:
+@shared_task(name='document.extract_knowledge_graph', bind=True)
+def extract_knowledge_graph(self, doc_id: str) -> dict:
     """Extract knowledge graph from document text."""
-    doc_id = result['doc_id']
     print(f"Starting knowledge graph extraction for document {doc_id}")
     try:
         # Get document text from relational DB
@@ -142,8 +141,8 @@ def extract_knowledge_graph(result: dict) -> dict:
         print(f"Error in extract_knowledge_graph: {str(e)}")
         raise Exception(f"Error extracting knowledge graph: {str(e)}")
 
-@shared_task(name='document.extract_content')
-def extract_content(result: dict) -> dict:
+@shared_task(name='document.extract_content', bind=True)
+def extract_content(self, result: dict) -> dict:
     """Extract and store content in vector and relational databases."""
     print(f"Starting content extraction for document {result['doc_id']}")
     try:
