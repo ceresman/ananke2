@@ -81,8 +81,9 @@ def process_document(document_path: str) -> str:
         raise Exception(f"Error processing document: {str(e)}")
 
 @shared_task(name='document.extract_knowledge_graph')
-def extract_knowledge_graph(doc_id: str) -> dict:
+def extract_knowledge_graph(result: dict) -> dict:
     """Extract knowledge graph from document text."""
+    doc_id = result['doc_id']
     print(f"Starting knowledge graph extraction for document {doc_id}")
     try:
         # Get document text from relational DB
@@ -142,10 +143,11 @@ def extract_knowledge_graph(doc_id: str) -> dict:
         raise Exception(f"Error extracting knowledge graph: {str(e)}")
 
 @shared_task(name='document.extract_content')
-def extract_content(doc_id: str) -> dict:
+def extract_content(result: dict) -> dict:
     """Extract and store content in vector and relational databases."""
-    print(f"Starting content extraction for document {doc_id}")
+    print(f"Starting content extraction for document {result['doc_id']}")
     try:
+        doc_id = result['doc_id']
         # Get document from relational DB
         print("Retrieving document from relational database...")
         rel_db = get_relational_db()
