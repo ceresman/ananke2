@@ -65,7 +65,7 @@ class CrossDatabaseQuery:
         # Extract document IDs from metadata and fetch full documents
         documents = []
         for result in results:
-            doc_id = result.metadata.get('document_id')
+            doc_id = result.get('metadata', {}).get('document_id')
             if doc_id:
                 doc = await self.mysql_db.get(UUID(doc_id))
                 if doc:
