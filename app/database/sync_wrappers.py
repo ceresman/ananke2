@@ -7,23 +7,27 @@ from ..models.entities import Entity, Relationship
 def run_async(coro):
     """Run an async coroutine in a sync context."""
     try:
-        # Try to get the current event loop
-        loop = asyncio.get_event_loop()
+        # Get or create event loop
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+
+        # If loop is running (we're in an async context)
         if loop.is_running():
-            # If we're in an async context, create a new loop
+            # Create new loop for sync operation
             new_loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(new_loop)
             try:
                 return new_loop.run_until_complete(coro)
             finally:
                 new_loop.close()
-                asyncio.set_event_loop(loop)
         else:
-            # If we're not in an async context, use the current loop
+            # Use existing loop
             return loop.run_until_complete(coro)
-    except RuntimeError:
-        # If there's no event loop, create one
-        return asyncio.run(coro)
+    except Exception as e:
+        print(f"Error in run_async: {str(e)}")
+        raise
 
 class GraphDatabase:
     """Synchronous wrapper for Neo4j interface."""
@@ -186,8 +190,9 @@ class RelationalDatabase:
         """Store a document and return its ID."""
         from ..models.structured import StructuredData
         doc = StructuredData(
-            data_type="document",
-            data_value=data
+            data_id=data["data_id"],
+            data_type=data["data_type"],
+            data_value=data["data_value"]
         )
         doc_id = run_async(self._async_db.create(doc))
         return str(doc_id)

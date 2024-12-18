@@ -2,67 +2,61 @@
 
 import os
 from typing import Dict, Any, Optional
-import asyncio
-import fitz  # PyMuPDF
+from unstructured.partition.pdf import partition_pdf
+import dashscope
+from http import HTTPStatus
 from celery import shared_task
+import arxiv
+import json
 from ..utils.qwen import QwenClient
-from ..database.sync_wrappers import GraphDatabase, VectorDatabase, RelationalDatabase
+from ..database.sync_wrappers import get_sync_relational_db, get_sync_vector_db, get_sync_graph_db
 from ..models.entities import Entity, Relationship
-from ..config import Settings
-from functools import lru_cache
-
-# Initialize settings with Docker networking enabled for worker processes
-settings = Settings(DOCKER_NETWORK=True)
+from ..config import settings
 
 # Initialize Qwen client
 qwen_client = QwenClient(api_key=settings.QWEN_API_KEY)
 
-@lru_cache()
-def get_graph_db():
-    """Get or create graph database connection."""
-    db = GraphDatabase(
-        uri=settings.get_neo4j_uri(),
-        username=settings.NEO4J_USER,
-        password=settings.NEO4J_PASSWORD
-    )
-    return db
+@shared_task(name='document.download_arxiv')
+def download_arxiv(arxiv_id: str) -> dict:
+    """Download arXiv paper and store metadata."""
+    print(f"Downloading arXiv paper {arxiv_id}")
 
-@lru_cache()
-def get_vector_db():
-    """Get or create vector database connection."""
-    db = VectorDatabase(
-        host=settings.get_chroma_host(),
-        port=settings.CHROMA_PORT,
-        collection_name=settings.CHROMA_COLLECTION
-    )
-    return db
+    try:
+        # Create downloads directory
+        download_dir = os.path.join(settings.DATA_DIR, 'arxiv')
+        os.makedirs(download_dir, exist_ok=True)
 
-@lru_cache()
-def get_relational_db():
-    """Get synchronous relational database interface."""
-    from ..database.sync_wrappers import get_sync_relational_db
-    return get_sync_relational_db()
+        # Download paper using arxiv API
+        search = arxiv.Search(id_list=[arxiv_id])
+        paper = next(search.results())
 
-def get_vector_db():
-    """Get synchronous vector database interface."""
-    from chromadb.api.models.Collection import Collection
-    from chromadb.config import Settings
-    import chromadb
-    from ..config import settings
+        # Download PDF
+        pdf_path = os.path.join(download_dir, f"{arxiv_id}.pdf")
+        paper.download_pdf(filename=pdf_path)
+        print(f"Downloaded PDF to {pdf_path}")
 
-    client = chromadb.HttpClient(host=settings.CHROMA_HOST, port=settings.CHROMA_PORT)
-    return client.get_or_create_collection(settings.CHROMA_COLLECTION)
+        # Store metadata
+        rel_db = get_sync_relational_db()
+        metadata = {
+            "arxiv_id": arxiv_id,
+            "title": paper.title,
+            "authors": [str(author) for author in paper.authors],
+            "abstract": paper.summary,
+            "categories": paper.categories,
+            "pdf_path": pdf_path,
+            "status": "downloaded"
+        }
+        doc_id = rel_db.store_document({
+            "data_id": arxiv_id,
+            "data_type": "arxiv_paper",
+            "data_value": metadata
+        })
 
-def get_graph_db():
-    """Get synchronous graph database interface."""
-    from neo4j import GraphDatabase
-    from ..config import settings
+        return {"doc_id": doc_id, "pdf_path": pdf_path}
 
-    driver = GraphDatabase.driver(
-        settings.NEO4J_URI,
-        auth=(settings.NEO4J_USER, settings.NEO4J_PASSWORD)
-    )
-    return driver.session()
+    except Exception as e:
+        print(f"Error downloading arXiv paper: {str(e)}")
+        raise
 
 @shared_task(name='document.process_document')
 def process_document(document_path: str) -> dict:
@@ -73,16 +67,14 @@ def process_document(document_path: str) -> dict:
 
     try:
         print("Opening PDF document...")
-        doc = fitz.open(document_path)
-        text = ""
-        for page in doc:
-            text += page.get_text()
-        doc.close()
+        # Process PDF using unstructured library directly
+        elements = partition_pdf(filename=document_path)
+        text = "\n".join([str(element) for element in elements])
         print(f"Extracted {len(text)} characters of text")
 
         # Store document metadata
         print("Storing document in relational database...")
-        rel_db = get_relational_db()
+        rel_db = get_sync_relational_db()
         from uuid import uuid4
         doc_id = uuid4()
         doc_data = {
@@ -101,91 +93,103 @@ def process_document(document_path: str) -> dict:
         return {"doc_id": str(doc_id), "text": text}
     except Exception as e:
         print(f"Error in process_document: {str(e)}")
-        raise Exception(f"Error processing document: {str(e)}")
+        raise
 
 @shared_task(name='document.extract_knowledge_graph')
-def extract_knowledge_graph(doc_id: str, text: str) -> dict:
+def extract_knowledge_graph(result_dict: dict) -> dict:
     """Extract knowledge graph from document text."""
+    doc_id = result_dict.get("doc_id")
+    text = result_dict.get("text")
+
     print(f"Starting knowledge graph extraction for document {doc_id}")
     try:
-        # Get document text from relational DB
-        print("Retrieving document from relational database...")
-        rel_db = get_relational_db()
-        doc = rel_db.get_document(doc_id)
-        if not doc:
-            raise ValueError(f"Document not found: {doc_id}")
-        print(f"Retrieved document with {len(doc['content'])} characters")
+        # Extract entities and relationships using Qwen format
+        prompt = """Given a text document that is potentially relevant to this activity and a list of entity types, identify all entities of those types from the text and all relationships among the identified entities.
 
-        # Extract entities and relationships
-        print("Extracting entities using Qwen API...")
-        loop = asyncio.get_event_loop()
-        entities = loop.run_until_complete(qwen_client.extract_entities(doc["content"]))
-        print(f"Extracted {len(entities)} entities")
+For each identified entity, extract:
+- entity_name: Name of the entity, capitalized
+- entity_type: One of [PERSON, ORGANIZATION, GEO, EVENT, CONCEPT]
+- entity_description: Comprehensive description of the entity's attributes and activities
 
-        print("Extracting relationships using Qwen API...")
-        relationships = loop.run_until_complete(qwen_client.extract_relationships(doc["content"]))
-        print(f"Extracted {len(relationships)} relationships")
+For each relationship between entities, extract:
+- source_entity: name of the source entity
+- target_entity: name of the target entity
+- relationship_description: explanation of the relationship
+- relationship_strength: integer score 1-10 indicating strength
+
+Format as JSON:
+{"entities": [{"name": <name>, "type": <type>, "description": <description>}],
+ "relationships": [{"source": <source>, "target": <target>, "relationship": <description>, "relationship_strength": <strength>}]}
+
+Text:
+{text}
+
+Just return the JSON output, nothing else."""
+
+        # Call Qwen API
+        resp = dashscope.Generation.call(
+            model="qwen-max",
+            prompt=prompt.format(text=text),
+            result_format='message'
+        )
+
+        if resp.status_code != HTTPStatus.OK:
+            raise Exception(f"Failed to extract knowledge graph: {resp.message}")
+
+        # Parse results
+        result = json.loads(resp.output.choices[0].message.content)
+        entities = result.get("entities", [])
+        relationships = result.get("relationships", [])
 
         # Store in graph database
-        print("Storing entities in graph database...")
-        graph_db = get_graph_db()
+        graph_db = get_sync_graph_db()
         for entity in entities:
             graph_db.store_entity(Entity(**entity))
-
-        print("Storing relationships in graph database...")
         for rel in relationships:
             graph_db.store_relationship(Relationship(**rel))
 
-        # Generate and store embeddings
-        print("Generating embeddings for entities...")
-        embeddings = loop.run_until_complete(qwen_client.generate_embeddings_batch(
-            [entity["description"] for entity in entities]
-        ))
-        print(f"Generated {len(embeddings)} embeddings")
-
-        # Store embeddings in vector database
-        print("Storing embeddings in vector database...")
-        vector_db = get_vector_db()
-        for entity, embedding in zip(entities, embeddings):
-            vector_db.store_embedding(
-                entity["name"],
-                embedding,
-                {"type": entity["type"], "description": entity["description"]}
-            )
-        print("Embeddings stored successfully")
-
         return {
+            "doc_id": doc_id,
             "entities": entities,
-            "relationships": relationships,
-            "doc_id": doc_id
+            "relationships": relationships
         }
 
     except Exception as e:
-        print(f"Error in extract_knowledge_graph: {str(e)}")
-        raise Exception(f"Error extracting knowledge graph: {str(e)}")
+        print(f"Error extracting knowledge graph: {str(e)}")
+        raise
 
 @shared_task(name='document.extract_content')
-def extract_content(doc_id: str, text: str, entities: list) -> dict:
+def extract_content(result_dict: dict) -> dict:
     """Extract and store content in vector and relational databases."""
+    doc_id = result_dict.get("doc_id")
+    text = result_dict.get("text")
+
     print(f"Starting content extraction for document {doc_id}")
     try:
         # Get document from relational DB
         print("Retrieving document from relational database...")
-        rel_db = get_relational_db()
+        rel_db = get_sync_relational_db()
         doc = rel_db.get_document(doc_id)
         if not doc:
             raise ValueError(f"Document not found: {doc_id}")
         print(f"Retrieved document with {len(doc['content'])} characters")
 
-        # Generate embeddings for document content
+        # Generate embeddings using dashscope
         print("Generating embeddings for document content...")
-        loop = asyncio.get_event_loop()
-        content_embedding = loop.run_until_complete(qwen_client.generate_embeddings(doc["content"]))
+        resp = dashscope.TextEmbedding.call(
+            model=dashscope.TextEmbedding.Models.text_embedding_v3,
+            input=text,
+            dimension=1024,
+            output_type="dense"
+        )
+        if resp.status_code != HTTPStatus.OK:
+            raise Exception("Failed to generate embeddings")
+        content_embedding = resp.output["embeddings"][0]["embedding"]
         print("Generated document embedding")
 
         # Store in vector database
         print("Storing document embedding in vector database...")
-        vector_db = get_vector_db()
+        vector_db = get_sync_vector_db()
         vector_db.store_embedding(
             f"doc_{doc_id}",
             content_embedding,
