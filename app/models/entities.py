@@ -1,45 +1,25 @@
 from uuid import UUID
-from typing import List, Dict, Any, TYPE_CHECKING, ForwardRef
-import numpy as np
-from pydantic import BaseModel, ConfigDict
-from .base import BaseObject
+from typing import List, Dict, Any, Optional
+from pydantic import Field
+from .types import SemanticBase, SymbolBase
 
-if TYPE_CHECKING:
-    from .structured import StructuredData
-else:
-    StructuredData = ForwardRef('StructuredData')
+class EntitySemantic(SemanticBase):
+    """Semantic information for an entity."""
+    pass
 
-class EntitySemantic(BaseObject):
-    """Represents a semantic entity in the knowledge graph."""
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
-    semantic_id: UUID
-    name: str
-    vector_representation: List[float]  # Using List[float] instead of np.ndarray for serialization
-
-    def to_chroma(self) -> Dict[str, Any]:
-        """Special handling for Chroma vector database."""
-        data = self.model_dump()
-        data['vector'] = self.vector_representation
-        return data
-
-class EntitySymbol(BaseObject):
-    """Represents a symbolic entity in the knowledge graph."""
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
-    symbol_id: UUID
-    name: str
+class EntitySymbol(SymbolBase):
+    """Symbol representing an entity in the knowledge graph."""
     entity_type: str
-    descriptions: List[str]
-    semantics: List[EntitySemantic]
-    properties: List[StructuredData]  # Fixed pluralization
-    labels: List[StructuredData]  # Renamed for consistency
+    semantics: List[EntitySemantic] = Field(default_factory=list)
 
     def to_neo4j(self) -> Dict[str, Any]:
-        """Special handling for Neo4j graph database."""
+        """Convert to Neo4j node properties."""
         return {
             'symbol_id': str(self.symbol_id),
             'name': self.name,
+            'entity_type': self.entity_type,
             'descriptions': self.descriptions,
-            'labels': [label.data_value for label in self.labels]
+            'properties': self.properties,
+            'labels': self.labels,
+            'document_id': str(self.document_id) if self.document_id else None
         }

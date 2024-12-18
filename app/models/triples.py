@@ -1,37 +1,40 @@
 from uuid import UUID
 from typing import Dict, Any
-from .base import BaseObject
-from .entities import EntitySymbol, EntitySemantic
-from .relations import RelationSymbol, RelationSemantic
+from pydantic import Field
 
-class TripleSymbol(BaseObject):
+from .types import SemanticBase, SymbolBase
+
+class TripleSymbol(SymbolBase):
     """Represents a triple in the knowledge graph."""
-    triple_id: UUID
-    subject: EntitySymbol
-    predicate: RelationSymbol
-    obj: EntitySymbol
+    subject_id: UUID
+    predicate_id: UUID
+    object_id: UUID
 
     def to_neo4j(self) -> Dict[str, Any]:
         """Special handling for Neo4j graph database."""
         return {
-            'triple_id': str(self.triple_id),
-            'subject': self.subject.to_neo4j(),
-            'predicate': self.predicate.to_neo4j(),
-            'object': self.obj.to_neo4j()
+            'triple_id': str(self.symbol_id),
+            'subject_id': str(self.subject_id),
+            'predicate_id': str(self.predicate_id),
+            'object_id': str(self.object_id),
+            'properties': self.properties,
+            'labels': self.labels
         }
 
-class TripleSemantic(BaseObject):
+class TripleSemantic(SemanticBase):
     """Represents a semantic triple in the knowledge graph."""
-    triple_id: UUID
-    subject: EntitySemantic
-    predicate: RelationSemantic
-    obj: EntitySemantic
+    subject_id: UUID
+    predicate_id: UUID
+    object_id: UUID
 
     def to_chroma(self) -> Dict[str, Any]:
         """Special handling for Chroma vector database."""
         return {
-            'triple_id': str(self.triple_id),
-            'subject_vector': self.subject.vector_representation,
-            'predicate_vector': self.predicate.semantic,
-            'object_vector': self.obj.vector_representation
+            'triple_id': str(self.semantic_id),
+            'subject_id': str(self.subject_id),
+            'predicate_id': str(self.predicate_id),
+            'object_id': str(self.object_id),
+            'semantic_type': self.semantic_type,
+            'semantic_value': self.semantic_value,
+            'confidence': self.confidence
         }

@@ -1,4 +1,4 @@
-"""Qwen API client for knowledge graph extraction."""
+"""Qwen API client for knowledge graph extraction and embeddings."""
 
 from typing import Dict, List, Any, Optional
 import time
@@ -116,4 +116,40 @@ class QwenClient:
                 results.append(result)
             except Exception as e:
                 results.append([])  # Empty list for failed extractions
+        return results
+
+    async def generate_embeddings(self, text: str, modality: str = "text") -> List[float]:
+        """Generate embeddings using Qwen model."""
+        if not text.strip():
+            raise ValueError("Input text cannot be empty")
+
+        last_error = None
+        for attempt in range(self.max_retries):
+            try:
+                response = self.client.embeddings.create(
+                    input=text,
+                    model="qwen"
+                )
+                return response.data[0].embedding
+
+            except Exception as e:
+                last_error = e
+                if "429" in str(e):
+                    if attempt < self.max_retries - 1:
+                        self._handle_rate_limit(attempt)
+                        continue
+                    raise Exception("Rate limit exceeded")
+                raise e
+
+        raise last_error or Exception("Failed to generate embeddings after max retries")
+
+    async def generate_embeddings_batch(self, texts: List[str], modality: str = "text") -> List[List[float]]:
+        """Generate embeddings for multiple texts."""
+        results = []
+        for text in texts:
+            try:
+                embedding = await self.generate_embeddings(text, modality)
+                results.append(embedding)
+            except Exception as e:
+                results.append([])  # Empty list for failed generations
         return results

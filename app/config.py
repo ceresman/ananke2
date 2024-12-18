@@ -41,3 +41,6 @@ class Settings(BaseSettings):
     class Config:
         """Pydantic config."""
         env_file = ".env"
+
+# Create settings instance
+settings = Settings()
