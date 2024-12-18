@@ -50,15 +50,15 @@ def get_relational_db():
     return db
 
 @shared_task(name='document.process_document')
-def process_document(pdf_path: str) -> str:
+def process_document(document_path: str) -> str:
     """Process PDF document and extract text content."""
-    print(f"Starting document processing for {pdf_path}")
-    if not os.path.exists(pdf_path):
-        raise FileNotFoundError(f"PDF file not found: {pdf_path}")
+    print(f"Starting document processing for {document_path}")
+    if not os.path.exists(document_path):
+        raise FileNotFoundError(f"PDF file not found: {document_path}")
 
     try:
         print("Opening PDF document...")
-        doc = fitz.open(pdf_path)
+        doc = fitz.open(document_path)
         text = ""
         for page in doc:
             text += page.get_text()
@@ -69,7 +69,7 @@ def process_document(pdf_path: str) -> str:
         print("Storing document in relational database...")
         rel_db = get_relational_db()
         doc_id = rel_db.store_document({
-            "path": pdf_path,
+            "path": document_path,
             "content": text,
             "status": "processed"
         })
