@@ -1,6 +1,6 @@
 """Document processing tasks for Ananke2."""
 
-from typing import Dict, Any
+from typing import Dict, Any, Union
 from celery import states
 from . import celery_app
 from ..models.structured import Document
@@ -47,16 +47,17 @@ def process_document(self, document_id: str) -> Dict[str, Any]:
         raise
 
 @celery_app.task
-def extract_content(document_id: str) -> Dict[str, Any]:
+def extract_content(document_result: Dict[str, Any]) -> Dict[str, Any]:
     """Extract content from document.
 
     Args:
-        document_id: The ID of the document to extract content from
+        document_result: Result dict from previous task containing document_id
 
     Returns:
         Dict containing extraction status and results
     """
     try:
+        document_id = document_result.get('document_id')
         # TODO: Implement content extraction logic
         # This is a placeholder for the actual implementation
 
@@ -73,16 +74,17 @@ def extract_content(document_id: str) -> Dict[str, Any]:
         }
 
 @celery_app.task
-def process_math_expressions(document_id: str) -> Dict[str, Any]:
+def process_math_expressions(content_result: Dict[str, Any]) -> Dict[str, Any]:
     """Process mathematical expressions in the document.
 
     Args:
-        document_id: The ID of the document containing math expressions
+        content_result: Result dict from previous task containing document_id
 
     Returns:
         Dict containing processing status and results
     """
     try:
+        document_id = content_result.get('document_id')
         # TODO: Implement mathematical expression processing logic
         # This is a placeholder for the actual implementation
 

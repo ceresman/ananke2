@@ -23,13 +23,13 @@ class Settings(BaseSettings):
     MYSQL_DATABASE: str = "ananke2"
 
     # Redis settings
-    REDIS_HOST: str = "redis"  # Docker service name
+    REDIS_HOST: str = "0.0.0.0"  # Bind to all interfaces
     REDIS_PORT: int = 6379
     REDIS_DB: int = 0
 
     # Celery settings
-    CELERY_BROKER_URL: str = "redis://redis:6379/0"  # Using Docker service name
-    CELERY_RESULT_BACKEND: str = "redis://redis:6379/0"
+    CELERY_BROKER_URL: str = "redis://0.0.0.0:6379/0"  # Using local Redis instance
+    CELERY_RESULT_BACKEND: str = "redis://0.0.0.0:6379/0"
 
     class Config:
         """Pydantic config."""

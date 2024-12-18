@@ -18,3 +18,6 @@ celery_app.conf.update(
     timezone='UTC',
     enable_utc=True,
 )
+
+from . import document  # noqa
+from . import workflow  # noqa
