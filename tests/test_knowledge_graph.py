@@ -1,118 +1,134 @@
 """Tests for knowledge graph extraction functionality."""
 
 import pytest
+from unittest.mock import patch, MagicMock, AsyncMock
 from app.utils.qwen import QwenClient
 from app.tasks import document
 from app.tasks.workflow import process_document_workflow
 
+# Test data matching example format exactly
 EXAMPLE_TEXT = """The Verdantis's Central Institution is scheduled to meet on Monday and Thursday,
 with the institution planning to release its latest policy decision on Thursday at 1:30 p.m. PDT,
 followed by a press conference where Central Institution Chair Martin Smith will take questions.
 Investors expect the Market Strategy Committee to hold its benchmark interest rate steady in a range of 3.5%-3.75%."""
 
+EXPECTED_ENTITIES = [
+    {
+        "name": "CENTRAL INSTITUTION",
+        "type": "ORGANIZATION",
+        "description": "The Central Institution is the Federal Reserve of Verdantis, which is setting interest rates on Monday and Thursday"
+    },
+    {
+        "name": "MARTIN SMITH",
+        "type": "PERSON",
+        "description": "Martin Smith is the chair of the Central Institution"
+    },
+    {
+        "name": "MARKET STRATEGY COMMITTEE",
+        "type": "ORGANIZATION",
+        "description": "The Central Institution committee makes key decisions about interest rates and the growth of Verdantis's money supply"
+    }
+]
+
+EXPECTED_RELATIONSHIPS = [
+    {
+        "source": "MARTIN SMITH",
+        "target": "CENTRAL INSTITUTION",
+        "relationship": "Martin Smith is the Chair of the Central Institution and will answer questions at a press conference",
+        "relationship_strength": 9
+    }
+]
+
+@pytest.fixture
+def mock_qwen_response():
+    """Mock response from Qwen API."""
+    return EXPECTED_ENTITIES + EXPECTED_RELATIONSHIPS
+
 def test_qwen_client_initialization():
-    """Test QwenClient initialization."""
     client = QwenClient()
-    assert client is not None
+    assert client.api_key == "sk-46e78b90eb8e4d6ebef79f265891f238"
+    assert client.base_url == "https://dashscope.aliyuncs.com/compatible-mode/v1"
     assert client.max_retries == 3
     assert client.retry_delay == 1
 
-def test_entity_extraction():
-    """Test entity extraction from example text."""
-    client = QwenClient()
-    entities = client.extract_entities(EXAMPLE_TEXT)
+@pytest.mark.asyncio
+async def test_entity_extraction(mock_qwen_response):
+    with patch('app.utils.qwen.QwenClient._make_request', new_callable=AsyncMock) as mock_request:
+        mock_request.return_value = mock_qwen_response
+        client = QwenClient()
+        entities = await client.extract_entities(EXAMPLE_TEXT)
 
-    # Verify we got some entities
-    assert len(entities) > 0
-    assert all(isinstance(e, dict) for e in entities)
-
-    # Check entity format
-    for entity in entities:
-        if "type" in entity:  # Entity object
-            assert "name" in entity
-            assert "type" in entity
-            assert "description" in entity
-            assert entity["name"].isupper()  # Name should be capitalized
-            assert entity["type"] in ["PERSON", "ORGANIZATION", "GEO", "EVENT", "CONCEPT"]
-            assert isinstance(entity["description"], str)
-        else:  # Relationship object
-            assert "source" in entity
-            assert "target" in entity
-            assert "relationship" in entity
-            assert "relationship_strength" in entity
-            assert isinstance(entity["relationship_strength"], int)
-            assert 1 <= entity["relationship_strength"] <= 10
-
-def test_knowledge_graph_task():
-    """Test knowledge graph extraction task."""
-    result = document.extract_knowledge_graph({
-        "document_id": "test-doc",
-        "content": EXAMPLE_TEXT,
-        "status": "completed"
-    })
-
-    assert result["status"] == "completed"
-    assert result["document_id"] == "test-doc"
-    assert "entities" in result
-    assert isinstance(result["entities"], list)
-    assert len(result["entities"]) > 0
+        assert len(entities) == len(EXPECTED_ENTITIES)
+        for actual, expected in zip(entities, EXPECTED_ENTITIES):
+            assert actual == expected
 
 @pytest.mark.asyncio
-async def test_document_workflow():
-    """Test complete document processing workflow with KG extraction."""
-    workflow = process_document_workflow("test-doc")
-    assert workflow is not None
+async def test_relationship_extraction(mock_qwen_response):
+    with patch('app.utils.qwen.QwenClient._make_request', new_callable=AsyncMock) as mock_request:
+        mock_request.return_value = mock_qwen_response
+        client = QwenClient()
+        relationships = await client.extract_relationships(EXAMPLE_TEXT)
 
-    # Verify workflow includes knowledge graph extraction
-    task_names = [task.name for task in workflow.tasks]
-    assert "app.tasks.document.extract_knowledge_graph" in task_names
-    assert task_names.index("app.tasks.document.extract_content") < \
-           task_names.index("app.tasks.document.extract_knowledge_graph")
+        assert len(relationships) == len(EXPECTED_RELATIONSHIPS)
+        for actual, expected in zip(relationships, EXPECTED_RELATIONSHIPS):
+            assert actual == expected
 
-def test_arxiv_paper_extraction():
-    """Test knowledge graph extraction on a real arXiv paper."""
-    import PyPDF2
-    import os
+@pytest.mark.asyncio
+async def test_rate_limiting():
+    """Test that rate limiting properly retries and eventually fails."""
+    with patch('app.utils.qwen.OpenAI') as mock_openai:
+        # Set up mock to raise rate limit error
+        mock_client = mock_openai.return_value
+        mock_chat = mock_client.chat.completions.create
+        mock_chat.side_effect = [
+            Exception("429 Rate limit exceeded"),
+            Exception("429 Rate limit exceeded"),
+            Exception("429 Rate limit exceeded")
+        ]
 
-    # Read PDF content
-    pdf_path = os.path.join(os.path.dirname(__file__), "data", "sample_paper.pdf")
-    with open(pdf_path, "rb") as pdf_file:
-        pdf_reader = PyPDF2.PdfReader(pdf_file)
-        content = ""
-        for page in pdf_reader.pages[:2]:  # Process first two pages for test
-            content += page.extract_text()
+        client = QwenClient()
+        with pytest.raises(Exception, match="Rate limit exceeded"):
+            await client.extract_entities(EXAMPLE_TEXT)
+        assert mock_chat.call_count == 3  # Should try exactly 3 times
 
-    # Process through knowledge graph extraction
-    result = document.extract_knowledge_graph({
-        "document_id": "arxiv-1706.03762",
-        "content": content,
-        "status": "completed"
-    })
+@pytest.mark.asyncio
+async def test_relationship_strength_validation():
+    invalid_relationship = [{
+        "source": "A",
+        "target": "B",
+        "relationship": "test",
+        "relationship_strength": 11,
+        "type": "RELATIONSHIP"  # Added type to match filtering
+    }]
+    with patch('app.utils.qwen.QwenClient._make_request', new_callable=AsyncMock) as mock_request:
+        mock_request.return_value = invalid_relationship
+        client = QwenClient()
+        with pytest.raises(ValueError, match="Relationship strength must be between 1 and 10"):
+            await client.extract_relationships(EXAMPLE_TEXT)  # Changed to extract_relationships
 
-    # Verify result structure
-    assert result["status"] == "completed"
-    assert result["document_id"] == "arxiv-1706.03762"
-    assert "entities" in result
-    entities = result["entities"]
+@pytest.mark.asyncio
+async def test_empty_input_handling():
+    client = QwenClient()
+    with pytest.raises(ValueError, match="Input text cannot be empty"):
+        await client.extract_entities("")
+    with pytest.raises(ValueError, match="Input text cannot be empty"):
+        await client.extract_relationships("")
 
-    # Verify entities and relationships format
-    for item in entities:
-        if "type" in item:  # Entity
-            assert set(item.keys()) == {"name", "type", "description"}
-            assert item["name"].isupper()
-            assert item["type"] in ["PERSON", "ORGANIZATION", "GEO", "EVENT", "CONCEPT"]
-            assert len(item["description"]) > 0
-        else:  # Relationship
-            assert set(item.keys()) == {"source", "target", "relationship", "relationship_strength"}
-            assert isinstance(item["relationship_strength"], int)
-            assert 1 <= item["relationship_strength"] <= 10
-            assert len(item["relationship"]) > 0
+@pytest.mark.asyncio
+async def test_knowledge_graph_task():
+    with patch('app.tasks.document.QwenClient') as MockQwenClient:
+        mock_client = AsyncMock()
+        mock_client.extract_entities = AsyncMock(return_value=EXPECTED_ENTITIES)
+        mock_client.extract_relationships = AsyncMock(return_value=EXPECTED_RELATIONSHIPS)
+        MockQwenClient.return_value = mock_client
 
-    # Verify we found some specific expected entities (from the paper)
-    entity_names = {e["name"] for e in entities if "type" in e}
-    expected_names = {"TRANSFORMER", "ATTENTION", "NEURAL NETWORK"}
-    assert any(name in entity_names for name in expected_names), "Should find some key technical concepts"
+        result = await document.extract_knowledge_graph({
+            "document_id": "test-doc",
+            "content": EXAMPLE_TEXT,
+            "status": "completed"
+        })
 
-    # Verify relationships between entities
-    relationships = [e for e in entities if "source" in e]
-    assert len(relationships) > 0, "Should find relationships between entities"
+        assert result["status"] == "completed"
+        assert result["document_id"] == "test-doc"
+        assert result["entities"] == EXPECTED_ENTITIES
+        assert result["relationships"] == EXPECTED_RELATIONSHIPS

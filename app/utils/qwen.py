@@ -29,37 +29,45 @@ class QwenClient:
 
     def __init__(self):
         """Initialize Qwen client with API configuration."""
+        self.api_key = settings.qwen_api_key
+        self.base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
         self.client = OpenAI(
-            api_key=settings.qwen_api_key,
-            base_url="https://dashscope.aliyuncs.com/compatible-mode/v1"
+            api_key=self.api_key,
+            base_url=self.base_url
         )
         self.max_retries = 3
         self.retry_delay = 1  # Initial delay in seconds
 
-    def _handle_rate_limit(self, attempt: int) -> None:
-        """Handle rate limiting with exponential backoff.
+    def _handle_rate_limit(self, attempt: int) -> bool:
+        """Handle rate limiting with exponential backoff. Returns True if should retry."""
+        if attempt >= self.max_retries - 1:
+            return False
+        delay = self.retry_delay * (2 ** attempt)
+        time.sleep(delay)
+        return True
 
-        Args:
-            attempt: Current retry attempt number
-        """
-        if attempt < self.max_retries:
-            delay = self.retry_delay * (2 ** attempt)  # Exponential backoff
-            time.sleep(delay)
-        else:
-            raise Exception("Max retries exceeded for rate limiting")
+    def _validate_relationships(self, data: List[Dict[str, Any]]) -> None:
+        """Validate relationship strength is within bounds."""
+        if not isinstance(data, list):
+            raise ValueError("Expected list of relationships")
 
-    def extract_entities(self, text: str) -> List[Dict[str, Any]]:
-        """Extract entities and relationships from text using Qwen API.
+        for item in data:
+            if "source" in item and "target" in item:  # Only validate relationship items
+                if "relationship_strength" not in item:
+                    raise ValueError("Relationship strength must be between 1 and 10")
+                try:
+                    strength = float(item["relationship_strength"])
+                    if not (1 <= strength <= 10):
+                        raise ValueError("Relationship strength must be between 1 and 10")
+                except (ValueError, TypeError):
+                    raise ValueError("Relationship strength must be between 1 and 10")
 
-        Args:
-            text: Input text to extract entities and relationships from
+    async def _make_request(self, text: str) -> List[Dict[str, Any]]:
+        """Make request to Qwen API with retry logic."""
+        if not text.strip():
+            raise ValueError("Input text cannot be empty")
 
-        Returns:
-            List of dictionaries containing entities and relationships
-
-        Raises:
-            Exception: If API call fails after max retries
-        """
+        last_error = None
         for attempt in range(self.max_retries):
             try:
                 completion = self.client.chat.completions.create(
@@ -69,31 +77,42 @@ class QwenClient:
                         {"role": "user", "content": text}
                     ]
                 )
-                # Parse response into list of dictionaries
-                result = eval(completion.choices[0].message.content)
-                return result
+                content = completion.choices[0].message.content
+                try:
+                    result = eval(content)
+                    return result
+                except (ValueError, SyntaxError) as e:
+                    raise ValueError(f"Invalid response format: {str(e)}")
 
             except Exception as e:
+                last_error = e
                 if "429" in str(e):
-                    self._handle_rate_limit(attempt)
-                    continue
-                raise
+                    if attempt < self.max_retries - 1:  # Only retry if not last attempt
+                        self._handle_rate_limit(attempt)
+                        continue
+                    raise Exception("Rate limit exceeded")
+                raise e
 
-        raise Exception("Failed to extract entities after max retries")
+        raise last_error or Exception("Failed to extract entities after max retries")
 
-    def extract_entities_batch(self, texts: List[str]) -> List[List[Dict[str, Any]]]:
-        """Extract entities and relationships from multiple texts.
+    async def extract_entities(self, text: str) -> List[Dict[str, Any]]:
+        """Extract entities from text using Qwen API."""
+        result = await self._make_request(text)
+        return [e for e in result if "type" in e]
 
-        Args:
-            texts: List of input texts
+    async def extract_relationships(self, text: str) -> List[Dict[str, Any]]:
+        """Extract relationships from text using Qwen API."""
+        result = await self._make_request(text)
+        relationships = [e for e in result if "source" in e and "target" in e]
+        self._validate_relationships(relationships)  # Validate after filtering
+        return relationships
 
-        Returns:
-            List of lists containing entities and relationships for each text
-        """
+    async def extract_entities_batch(self, texts: List[str]) -> List[List[Dict[str, Any]]]:
+        """Extract entities and relationships from multiple texts."""
         results = []
         for text in texts:
             try:
-                result = self.extract_entities(text)
+                result = await self.extract_entities(text)
                 results.append(result)
             except Exception as e:
                 results.append([])  # Empty list for failed extractions
