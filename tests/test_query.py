@@ -59,7 +59,10 @@ def query(mock_databases, mock_entity, mock_doc):
     vector_db, graph_db, mysql_db = mock_databases
 
     # Set up mock returns
-    vector_db.search = AsyncMock(return_value=[mock_doc])
+    vector_db.search = AsyncMock(return_value=[{
+        'id': str(mock_doc.id),
+        'metadata': {'document_id': str(mock_doc.id)}
+    }])
     graph_db.search = AsyncMock(return_value=[mock_entity])
     mysql_db.search = AsyncMock(return_value=[mock_doc])
     mysql_db.get = AsyncMock(return_value=mock_doc)
