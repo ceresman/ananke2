@@ -1,6 +1,7 @@
 """Tests for knowledge graph extraction functionality."""
 
 import pytest
+import json
 from unittest.mock import patch, MagicMock, AsyncMock
 from http import HTTPStatus
 import dashscope
@@ -47,17 +48,25 @@ def mock_qwen_response():
     return EXPECTED_ENTITIES + EXPECTED_RELATIONSHIPS
 
 def test_qwen_client_initialization():
-    client = QwenClient()
-    assert client.api_key == "sk-46e78b90eb8e4d6ebef79f265891f238"
+    """Test QwenClient initialization with API key."""
+    api_key = "sk-46e78b90eb8e4d6ebef79f265891f238"
+    client = QwenClient(api_key=api_key)
+    assert client.api_key == api_key
     assert client.base_url == "https://dashscope.aliyuncs.com/compatible-mode/v1"
     assert client.max_retries == 3
     assert client.retry_delay == 1
 
 @pytest.mark.asyncio
 async def test_entity_extraction(mock_qwen_response):
-    with patch('app.utils.qwen.QwenClient._make_request', new_callable=AsyncMock) as mock_request:
-        mock_request.return_value = mock_qwen_response
-        client = QwenClient()
+    """Test entity extraction with mocked API response."""
+    with patch('dashscope.Generation.call') as mock_call:
+        # Mock successful response
+        mock_response = MagicMock()
+        mock_response.status_code = HTTPStatus.OK
+        mock_response.output.choices = [MagicMock(message=MagicMock(content=json.dumps(EXPECTED_ENTITIES)))]
+        mock_call.return_value = mock_response
+
+        client = QwenClient(api_key="sk-46e78b90eb8e4d6ebef79f265891f238")
         entities = await client.extract_entities(EXAMPLE_TEXT)
 
         assert len(entities) == len(EXPECTED_ENTITIES)
@@ -66,9 +75,15 @@ async def test_entity_extraction(mock_qwen_response):
 
 @pytest.mark.asyncio
 async def test_relationship_extraction(mock_qwen_response):
-    with patch('app.utils.qwen.QwenClient._make_request', new_callable=AsyncMock) as mock_request:
-        mock_request.return_value = mock_qwen_response
-        client = QwenClient()
+    """Test relationship extraction with mocked API response."""
+    with patch('dashscope.Generation.call') as mock_call:
+        # Mock successful response
+        mock_response = MagicMock()
+        mock_response.status_code = HTTPStatus.OK
+        mock_response.output.choices = [MagicMock(message=MagicMock(content=json.dumps(EXPECTED_RELATIONSHIPS)))]
+        mock_call.return_value = mock_response
+
+        client = QwenClient(api_key="sk-46e78b90eb8e4d6ebef79f265891f238")
         relationships = await client.extract_relationships(EXAMPLE_TEXT)
 
         assert len(relationships) == len(EXPECTED_RELATIONSHIPS)

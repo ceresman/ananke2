@@ -136,10 +136,18 @@ Just return the JSON output, nothing else."""
         if resp.status_code != HTTPStatus.OK:
             raise Exception(f"Failed to extract knowledge graph: {resp.message}")
 
-        # Parse results
-        result = json.loads(resp.output.choices[0].message.content)
-        entities = result.get("entities", [])
-        relationships = result.get("relationships", [])
+        try:
+            # Parse results
+            result = json.loads(resp.output.choices[0].message.content)
+            if not isinstance(result, dict) or "entities" not in result:
+                raise ValueError("Invalid response format from Qwen API")
+
+            entities = result.get("entities", [])
+            relationships = result.get("relationships", [])
+        except json.JSONDecodeError:
+            raise Exception("Failed to parse Qwen API response")
+        except KeyError as e:
+            raise Exception(f"Missing required field in response: {str(e)}")
 
         # Store in graph database
         graph_db = get_sync_graph_db()
