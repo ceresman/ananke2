@@ -11,10 +11,11 @@ def sample_pdf():
 
 @pytest.fixture
 def databases():
+    """Initialize test databases with mock connections."""
     return {
-        "graph": GraphDatabase(),
-        "vector": VectorDatabase(),
-        "relational": RelationalDatabase()
+        "graph": GraphDatabase(uri="bolt://localhost:7687", username="neo4j", password="test"),
+        "vector": VectorDatabase(host="localhost", port=6379),
+        "relational": RelationalDatabase(host="localhost", port=3306, database="test")
     }
 
 def test_document_processing(sample_pdf, databases):

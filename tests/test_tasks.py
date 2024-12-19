@@ -30,7 +30,7 @@ def mock_celery_result():
 @pytest.mark.asyncio
 @patch('app.tasks.document.process_document')
 @patch('app.utils.qwen.QwenClient')
-async def test_document_processing(mock_qwen, mock_process, mock_celery_result):
+def test_document_processing(mock_qwen, mock_process, mock_celery_result):
     """Test document processing workflow."""
     document_id = "test-doc-id"
 
@@ -46,7 +46,7 @@ async def test_document_processing(mock_qwen, mock_process, mock_celery_result):
     mock_process.apply_async.return_value = mock_celery_result(document_id)
 
     # Test
-    result = await workflow.process_document_workflow(document_id)
+    result = workflow.process_document_workflow(document_id)
 
     assert isinstance(result, dict)
     assert result["status"] == "completed"
@@ -57,7 +57,7 @@ async def test_document_processing(mock_qwen, mock_process, mock_celery_result):
 @pytest.mark.asyncio
 @patch('app.tasks.document.process_document')
 @patch('app.utils.qwen.QwenClient')
-async def test_batch_document_processing(mock_qwen, mock_process, mock_celery_result):
+def test_batch_document_processing(mock_qwen, mock_process, mock_celery_result):
     """Test batch document processing workflow."""
     document_ids = ["test-doc-1", "test-doc-2"]
 
@@ -75,7 +75,7 @@ async def test_batch_document_processing(mock_qwen, mock_process, mock_celery_re
     ]
 
     # Test
-    results = await workflow.process_documents_batch(document_ids)
+    results = workflow.process_documents_batch(document_ids)
 
     assert isinstance(results, list)
     assert all(isinstance(r, dict) for r in results)
@@ -87,7 +87,7 @@ async def test_batch_document_processing(mock_qwen, mock_process, mock_celery_re
 @pytest.mark.asyncio
 @patch('app.tasks.document.process_document')
 @patch('app.utils.qwen.QwenClient')
-async def test_task_progress_tracking(mock_qwen, mock_process, mock_celery_result):
+def test_task_progress_tracking(mock_qwen, mock_process, mock_celery_result):
     """Test task progress tracking functionality."""
     document_id = "test-doc-progress"
 
@@ -103,7 +103,7 @@ async def test_task_progress_tracking(mock_qwen, mock_process, mock_celery_resul
     mock_process.apply_async.return_value = mock_celery_result(document_id)
 
     # Test
-    result = await workflow.process_document_workflow(document_id)
+    result = workflow.process_document_workflow(document_id)
 
     assert isinstance(result, dict)
     assert result["status"] == "completed"

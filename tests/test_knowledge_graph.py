@@ -133,22 +133,39 @@ async def test_empty_input_handling():
 
 @pytest.mark.asyncio
 async def test_knowledge_graph_task():
+    """Test knowledge graph extraction task."""
     with patch('app.tasks.document.QwenClient') as MockQwenClient:
         mock_client = AsyncMock()
-        mock_client.extract_entities = AsyncMock(return_value=EXPECTED_ENTITIES)
-        mock_client.extract_relationships = AsyncMock(return_value=EXPECTED_RELATIONSHIPS)
+        mock_client.extract_entities.return_value = EXPECTED_ENTITIES
+        mock_client.extract_relationships.return_value = EXPECTED_RELATIONSHIPS
         MockQwenClient.return_value = mock_client
 
-        result = await document.extract_knowledge_graph({
-            "document_id": "test-doc",
-            "content": EXAMPLE_TEXT,
-            "status": "completed"
-        })
+        # Mock dashscope API call
+        with patch('dashscope.Generation.call') as mock_call:
+            mock_response = MagicMock()
+            mock_response.status_code = HTTPStatus.OK
+            mock_response.output.choices = [
+                MagicMock(
+                    message=MagicMock(
+                        content=json.dumps({
+                            "entities": EXPECTED_ENTITIES,
+                            "relationships": EXPECTED_RELATIONSHIPS
+                        })
+                    )
+                )
+            ]
+            mock_call.return_value = mock_response
 
-        assert result["status"] == "completed"
-        assert result["document_id"] == "test-doc"
-        assert result["entities"] == EXPECTED_ENTITIES
-        assert result["relationships"] == EXPECTED_RELATIONSHIPS
+            result = await document.extract_knowledge_graph({
+                "doc_id": "test-doc",
+                "text": EXAMPLE_TEXT,
+                "status": "completed"
+            })
+
+            assert result["status"] == "completed"
+            assert result["doc_id"] == "test-doc"
+            assert result["entities"] == EXPECTED_ENTITIES
+            assert result["relationships"] == EXPECTED_RELATIONSHIPS
 
 @pytest.mark.asyncio
 async def test_embedding_generation():

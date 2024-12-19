@@ -5,9 +5,23 @@ from unittest.mock import patch, MagicMock, AsyncMock
 from app.tasks.workflow import process_document_workflow
 from app.database.sync_wrappers import get_sync_relational_db, get_sync_vector_db, get_sync_graph_db
 
+@pytest.fixture
+def mock_neo4j():
+    """Mock Neo4j connection."""
+    with patch('neo4j.AsyncGraphDatabase') as mock:
+        mock_session = AsyncMock()
+        mock_session.__aenter__.return_value = mock_session
+        mock_session.__aexit__.return_value = None
+        mock_session.run.return_value = AsyncMock()
+
+        mock_driver = AsyncMock()
+        mock_driver.session.return_value = mock_session
+        mock.return_value = mock_driver
+        yield mock
+
 @pytest.mark.unit
 @patch('app.tasks.workflow.process_document_workflow.delay')
-def test_arxiv_workflow(mock_delay):
+def test_arxiv_workflow(mock_delay, mock_neo4j):
     """Test the complete arXiv document processing workflow."""
     # Test with GPT-3 paper
     arxiv_id = "2005.14165"

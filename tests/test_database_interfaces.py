@@ -56,6 +56,7 @@ mock_read_data = {
 }
 
 @pytest.mark.unit
+@pytest.mark.asyncio
 async def test_neo4j_interface(entity_symbol):
     """Test Neo4j interface with mocked connection."""
     # Create mock driver and session
@@ -65,21 +66,22 @@ async def test_neo4j_interface(entity_symbol):
     mock_read_result = AsyncMock()
 
     # Setup mock result for create
-    mock_result.single = AsyncMock(return_value={'e.id': str(entity_symbol.symbol_id)})
+    mock_result.single.return_value = {'e.id': str(entity_symbol.symbol_id)}
 
     # Setup mock result for read
-    mock_read_result.single = AsyncMock(return_value={
+    mock_read_result.single.return_value = {
         'e': {
             'id': str(entity_symbol.symbol_id),
             'name': entity_symbol.name,
             'descriptions': entity_symbol.descriptions,
             'entity_type': entity_symbol.entity_type
         }
-    })
+    }
 
     # Setup mock session
     mock_session.__aenter__.return_value = mock_session
-    mock_session.run = AsyncMock(side_effect=lambda query, **kwargs: mock_result if 'CREATE' in query else mock_read_result)
+    mock_session.__aexit__.return_value = None
+    mock_session.run.side_effect = lambda query, **kwargs: mock_result if 'CREATE' in query else mock_read_result
     mock_driver.session.return_value = mock_session
 
     # Initialize interface with mock driver
