@@ -1,0 +1,77 @@
+{
+  "entities": [
+    {
+      "name": "LAYOUTPARSER",
+      "type": "SOFTWARE",
+      "description": "A document analysis toolkit"
+    },
+    {
+      "name": "ZEJIANG SHEN",
+      "type": "PERSON",
+      "description": "Contributor to LayoutParser"
+    },
+    {
+      "name": "RUOCHEN ZHANG",
+      "type": "PERSON",
+      "description": "Contributor to LayoutParser"
+    },
+    {
+      "name": "MELISSA DELL",
+      "type": "PERSON",
+      "description": "Contributor to LayoutParser"
+    },
+    {
+      "name": "BENJAMIN CHARLES GERMAIN LEE",
+      "type": "PERSON",
+      "description": "Contributor to LayoutParser"
+    },
+    {
+      "name": "JACOB CARLSON",
+      "type": "PERSON",
+      "description": "Contributor to LayoutParser"
+    },
+    {
+      "name": "WEINING LI",
+      "type": "PERSON",
+      "description": "Contributor to LayoutParser"
+    }
+  ],
+  "relationships": [
+    {
+      "source": "ZEJIANG SHEN",
+      "target": "LAYOUTPARSER",
+      "relationship": "Contributed to the software",
+      "relationship_strength": 9
+    },
+    {
+      "source": "RUOCHEN ZHANG",
+      "target": "LAYOUTPARSER",
+      "relationship": "Contributed to the software",
+      "relationship_strength": 8
+    },
+    {
+      "source": "MELISSA DELL",
+      "target": "LAYOUTPARSER",
+      "relationship": "Contributed to the software",
+      "relationship_strength": 8
+    },
+    {
+      "source": "BENJAMIN CHARLES GERMAIN LEE",
+      "target": "LAYOUTPARSER",
+      "relationship": "Contributed to the software",
+      "relationship_strength": 8
+    },
+    {
+      "source": "JACOB CARLSON",
+      "target": "LAYOUTPARSER",
+      "relationship": "Contributed to the software",
+      "relationship_strength": 8
+    },
+    {
+      "source": "WEINING LI",
+      "target": "LAYOUTPARSER",
+      "relationship": "Contributed to the software",
+      "relationship_strength": 8
+    }
+  ]
+}

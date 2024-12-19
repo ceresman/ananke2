@@ -1,6 +1,6 @@
 """Qwen API client for knowledge graph extraction and embeddings."""
 
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 import json
 import asyncio
 import dashscope
@@ -10,14 +10,70 @@ from ..config import settings
 class QwenClient:
     """Client for interacting with Qwen API."""
 
-    def __init__(self, api_key: str):
+    def __init__(self, api_key: Optional[str] = None):
         """Initialize Qwen client."""
         self.api_key = api_key
-        dashscope.api_key = api_key
+        if not self.api_key:
+            self.api_key = settings.QWEN_API_KEY
+        self.base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+        self.max_retries = 3
+        self.retry_delay = 1
+        dashscope.api_key = self.api_key
 
-    def extract_entities_sync(self, text: str) -> List[Dict[str, Any]]:
+    async def extract_entities(self, text: str) -> List[Dict[str, Any]]:
         """Extract entities from text using Qwen API."""
-        prompt = """Given a text document that is potentially relevant to this activity and a list of entity types, identify all entities of those types from the text.
+        if not text.strip():
+            raise ValueError("Input text cannot be empty")
+
+        result = await self._make_request(text, request_type="entities")
+        if not result:
+            return []
+        return result
+
+    async def _make_request(self, text: str, request_type: str = "entities") -> List[Dict[str, Any]]:
+        """Make request to Qwen API with retries."""
+        prompt = self._get_prompt(text, request_type)
+
+        last_error = None
+        for attempt in range(self.max_retries):
+            try:
+                resp = dashscope.Generation.call(
+                    model="qwen-max",
+                    prompt=prompt,
+                    result_format='message'
+                )
+
+                if resp.status_code == HTTPStatus.OK:
+                    try:
+                        content = resp.output.choices[0].message.content
+                        result = json.loads(content)
+                        if isinstance(result, list):
+                            return result
+                        return []
+                    except (json.JSONDecodeError, AttributeError, IndexError, TypeError):
+                        return []
+
+                if resp.status_code == HTTPStatus.TOO_MANY_REQUESTS:
+                    last_error = Exception("API error: Rate limit exceeded")
+                else:
+                    last_error = Exception(f"API error: {resp.message}")
+
+                if attempt < self.max_retries - 1:
+                    await asyncio.sleep(self.retry_delay * (attempt + 1))
+                continue
+
+            except Exception as e:
+                last_error = e
+                if attempt < self.max_retries - 1:
+                    await asyncio.sleep(self.retry_delay * (attempt + 1))
+                continue
+
+        raise last_error or Exception("Failed to extract data after max retries")
+
+    def _get_prompt(self, text: str, request_type: str) -> str:
+        """Get prompt based on request type."""
+        if request_type == "entities":
+            return f"""Given a text document that is potentially relevant to this activity and a list of entity types, identify all entities of those types from the text.
 
 For each identified entity, extract the following information:
 - entity_name: Name of the entity, capitalized
@@ -25,76 +81,46 @@ For each identified entity, extract the following information:
 - entity_description: Comprehensive description of the entity's attributes and activities
 
 Format each entity output as a JSON entry with the following format:
-{"name": <entity name>, "type": <type>, "description": <entity description>}
+{{"name": "<entity name>", "type": "<type>", "description": "<entity description>"}}
 
 Text:
 {text}
 
 Just return output as a list of JSON entities, nothing else."""
+        else:
+            return f"""Given a text document, identify all relationships between entities in the text.
 
-        resp = dashscope.Generation.call(
-            model="qwen-max",
-            prompt=prompt.format(text=text),
-            result_format='message'
-        )
+For each relationship, extract:
+- source_entity: Name of the source entity (capitalized)
+- target_entity: Name of the target entity (capitalized)
+- relationship_description: Explanation of how they are related
+- relationship_strength: Integer score 1-10 indicating strength
 
-        if resp.status_code != HTTPStatus.OK:
-            raise Exception(f"Failed to extract entities: {resp.message}")
-
-        try:
-            return json.loads(resp.output.choices[0].message.content)
-        except json.JSONDecodeError:
-            return []
-
-    def extract_relationships_sync(self, text: str) -> List[Dict[str, Any]]:
-        """Extract relationships from text using Qwen API."""
-        prompt = """From the entities identified in the text, identify all pairs of (source_entity, target_entity) that are clearly related to each other.
-
-For each pair of related entities, extract the following information:
-- source_entity: name of the source entity
-- target_entity: name of the target entity
-- relationship_description: explanation as to why you think the source entity and the target entity are related to each other
-- relationship_strength: an integer score between 1 to 10, indicating strength of the relationship
-
-Format each relationship as a JSON entry with the following format:
-{"source": <source_entity>, "target": <target_entity>, "relationship": <relationship_description>, "relationship_strength": <relationship_strength>}
+Format as JSON:
+{{"source": "<source>", "target": "<target>", "relationship": "<description>", "relationship_strength": <strength>}}
 
 Text:
 {text}
 
 Just return output as a list of JSON relationships, nothing else."""
 
-        resp = dashscope.Generation.call(
-            model="qwen-max",
-            prompt=prompt.format(text=text),
-            result_format='message'
-        )
-
-        if resp.status_code != HTTPStatus.OK:
-            raise Exception(f"Failed to extract relationships: {resp.message}")
-
-        try:
-            return json.loads(resp.output.choices[0].message.content)
-        except json.JSONDecodeError:
-            return []
-
     async def extract_relationships(self, text: str) -> List[Dict[str, Any]]:
         """Extract relationships from text using Qwen API."""
-        result = await self._make_request(text)
-        relationships = [e for e in result if "source" in e and "target" in e]
-        self._validate_relationships(relationships)  # Validate after filtering
-        return relationships
+        if not text.strip():
+            raise ValueError("Input text cannot be empty")
 
-    async def extract_entities_batch(self, texts: List[str]) -> List[List[Dict[str, Any]]]:
-        """Extract entities and relationships from multiple texts."""
-        results = []
-        for text in texts:
-            try:
-                result = await self.extract_entities(text)
-                results.append(result)
-            except Exception as e:
-                results.append([])  # Empty list for failed extractions
-        return results
+        result = await self._make_request(text, request_type="relationships")
+        if not result:
+            return []
+        self._validate_relationships(result)
+        return result
+
+    def _validate_relationships(self, relationships: List[Dict[str, Any]]) -> None:
+        """Validate relationship strength is between 1 and 10."""
+        for rel in relationships:
+            strength = rel.get("relationship_strength")
+            if not isinstance(strength, int) or strength < 1 or strength > 10:
+                raise ValueError("Relationship strength must be between 1 and 10")
 
     async def generate_embeddings(self, text: str, modality: str = "text") -> List[float]:
         """Generate embeddings using Qwen text-embedding-v3 model."""
@@ -102,7 +128,7 @@ Just return output as a list of JSON relationships, nothing else."""
             raise ValueError("Input text cannot be empty")
 
         last_error = None
-        for attempt in range(3):  # Max 3 retries
+        for attempt in range(self.max_retries):
             try:
                 response = dashscope.TextEmbedding.call(
                     model=dashscope.TextEmbedding.Models.text_embedding_v3,
@@ -112,18 +138,24 @@ Just return output as a list of JSON relationships, nothing else."""
                 )
 
                 if response.status_code == HTTPStatus.OK:
-                    # Return dense embeddings
-                    return response.output["embeddings"][0]["dense"]
+                    try:
+                        return response.output["embeddings"][0]["dense"]
+                    except (KeyError, IndexError):
+                        raise Exception("Invalid embedding response format")
 
-                last_error = Exception(f"API error: {response.message}")
-                if attempt < 2:  # Only sleep if we're going to retry
-                    await asyncio.sleep(1 * (attempt + 1))  # Exponential backoff
+                if response.status_code == HTTPStatus.TOO_MANY_REQUESTS:
+                    last_error = Exception("API error: Rate limit exceeded")
+                else:
+                    last_error = Exception(f"API error: {response.message}")
+
+                if attempt < self.max_retries - 1:
+                    await asyncio.sleep(self.retry_delay * (attempt + 1))
                 continue
 
             except Exception as e:
                 last_error = e
-                if attempt < 2:  # Only sleep if we're going to retry
-                    await asyncio.sleep(1 * (attempt + 1))
+                if attempt < self.max_retries - 1:
+                    await asyncio.sleep(self.retry_delay * (attempt + 1))
                 continue
 
         raise last_error or Exception("Failed to generate embeddings after max retries")
@@ -135,6 +167,6 @@ Just return output as a list of JSON relationships, nothing else."""
             try:
                 embedding = await self.generate_embeddings(text, modality)
                 results.append(embedding)
-            except Exception as e:
+            except Exception:
                 results.append([])  # Empty list for failed generations
         return results

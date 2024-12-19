@@ -1,42 +1,48 @@
 """Task workflow manager for Ananke2."""
 
-from typing import Dict, Any
-from celery import chain
+from typing import Dict, Any, List
+from celery import shared_task
 from . import celery_app, document
 
-@celery_app.task(name='app.tasks.workflow.process_document_workflow', bind=True)
-def process_document_workflow(self, document_id: str) -> Dict[str, Any]:
-    """Process arXiv paper workflow.
-
-    Args:
-        document_id: Document ID
-
-    Returns:
-        Dict containing processing results
-    """
+@celery_app.task(name='workflow.process_document_workflow')
+def process_document_workflow(document_id: str) -> Dict[str, Any]:
+    """Process arXiv paper workflow."""
     try:
-        self.update_state(state='PROCESSING',
-                         meta={'progress': 0, 'current_operation': 'Starting document processing'})
-
         # Chain arXiv processing tasks
-        workflow = chain(
-            document.download_arxiv.s(arxiv_id=document_id),
-            document.process_document.s(),
-            document.extract_knowledge_graph.s(),
-            document.extract_content.s()
-        )
-        result = workflow.apply_async()
+        result = document.download_arxiv.delay(arxiv_id=document_id)
+        download_result = result.get()
 
-        self.update_state(state='COMPLETED',
-                         meta={'progress': 100, 'current_operation': 'Document processing completed'})
+        process_result = document.process_document.delay(download_result["pdf_path"]).get()
+        kg_result = document.extract_knowledge_graph.delay(process_result).get()
+        content_result = document.extract_content.delay(process_result).get()
 
         return {
-            'status': 'COMPLETED',
+            'status': 'completed',
             'task_id': result.id,
-            'document_id': document_id
+            'document_id': document_id,
+            'entities': kg_result.get('entities', []),
+            'relationships': kg_result.get('relationships', [])
         }
 
     except Exception as e:
-        self.update_state(state='FAILED',
-                         meta={'progress': 0, 'current_operation': 'Failed', 'error': str(e)})
-        raise
+        return {
+            'status': 'failed',
+            'error': str(e),
+            'document_id': document_id
+        }
+
+@celery_app.task(name='workflow.process_documents_batch')
+def process_documents_batch(document_ids: List[str]) -> List[Dict[str, Any]]:
+    """Process multiple documents in batch."""
+    results = []
+    for doc_id in document_ids:
+        try:
+            result = process_document_workflow.delay(doc_id).get()
+            results.append(result)
+        except Exception as e:
+            results.append({
+                'status': 'failed',
+                'error': str(e),
+                'document_id': doc_id
+            })
+    return results

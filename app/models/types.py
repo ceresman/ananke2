@@ -31,3 +31,10 @@ class SymbolBase(BaseObject):
     properties: Dict[str, Any] = Field(default_factory=dict)
     labels: List[str] = Field(default_factory=list)
     document_id: Optional[UUID] = None
+
+    def model_dump(self, **kwargs) -> Dict[str, Any]:
+        data = super().model_dump(**kwargs)
+        data['symbol_id'] = str(data['symbol_id'])
+        if data.get('document_id'):
+            data['document_id'] = str(data['document_id'])
+        return data

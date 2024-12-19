@@ -37,6 +37,16 @@ class EntitySemantic(SemanticBase):
     semantic_type: str = Field(default="DEFINITION")
     semantic_value: str = Field(default="")
 
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert semantic entity to dictionary."""
+        return {
+            "id": str(self.semantic_id),
+            "name": self.name,
+            "semantic_type": self.semantic_type,
+            "semantic_value": self.semantic_value,
+            "vector_representation": self.vector_representation
+        }
+
 class EntitySymbol(SymbolBase):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
