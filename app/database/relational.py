@@ -22,7 +22,7 @@ class StructuredDataTable(Base):
     data_type = Column(String(255), nullable=False)
     data_value = Column(JSON, nullable=False)
 
-class AsyncRelationalDatabase(DatabaseInterface[StructuredData]):
+class MySQLInterface(DatabaseInterface[StructuredData]):
     """MySQL database interface implementation."""
 
     def __init__(self, host: str = "localhost", port: int = 3306,

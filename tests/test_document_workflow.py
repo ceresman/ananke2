@@ -10,9 +10,9 @@ import requests
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from app.tasks.workflow import process_document_workflow
-from app.database.graph import AsyncGraphDatabase
-from app.database.vector import AsyncVectorDatabase
-from app.database.relational import AsyncRelationalDatabase
+from app.database.graph import Neo4jInterface
+from app.database.vector import ChromaInterface
+from app.database.relational import MySQLInterface
 from app.config import Settings
 
 settings = Settings()
@@ -61,7 +61,7 @@ async def verify_database_writes():
     print("\nVerifying database writes...")
 
     # Check Neo4j
-    graph_db = AsyncGraphDatabase(
+    graph_db = Neo4jInterface(
         uri="bolt://neo4j:7687",
         username=settings.NEO4J_USER,
         password=settings.NEO4J_PASSWORD
@@ -73,7 +73,7 @@ async def verify_database_writes():
     await graph_db.disconnect()
 
     # Check ChromaDB
-    vector_db = AsyncVectorDatabase(
+    vector_db = ChromaInterface(
         host="chromadb",
         port=settings.CHROMA_PORT,
         collection_name=settings.CHROMA_COLLECTION
@@ -84,7 +84,7 @@ async def verify_database_writes():
     await vector_db.disconnect()
 
     # Check MySQL
-    relational_db = AsyncRelationalDatabase(
+    relational_db = MySQLInterface(
         host="mysql",
         port=settings.MYSQL_PORT,
         user=settings.MYSQL_USER,

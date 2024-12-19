@@ -1,7 +1,7 @@
 """Test the arXiv document processing workflow."""
 import os
 import pytest
-from app.tasks.workflow import process_arxiv_workflow
+from app.tasks.workflow import process_document_workflow
 from app.database.sync_wrappers import get_sync_relational_db, get_sync_vector_db, get_sync_graph_db
 
 def test_arxiv_workflow():
@@ -11,7 +11,7 @@ def test_arxiv_workflow():
     print(f"Processing arXiv paper {arxiv_id}...")
 
     # Run workflow
-    result = process_arxiv_workflow.delay(arxiv_id)
+    result = process_document_workflow.delay(arxiv_id)
     task_id = result.id
     print(f"Task ID: {task_id}")
 
