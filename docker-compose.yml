@@ -111,6 +111,10 @@ services:
       - PYTHONPATH=/app
       - QWEN_API_KEY=sk-46e78b90eb8e4d6ebef79f265891f238
       - CHROMA_HOST=chromadb
+      - CUDA_VISIBLE_DEVICES=-1
+      - TORCH_CPU_ONLY=1
+      - TF_FORCE_GPU_ALLOW_GROWTH=false
+      - TF_CPU_ONLY=1
     depends_on:
       redis:
         condition: service_healthy
