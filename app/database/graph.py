@@ -12,7 +12,7 @@ from ..models.entities import EntitySymbol
 from ..models.relations import RelationSymbol
 from ..models.triples import TripleSymbol
 
-class AsyncGraphDatabase(DatabaseInterface[EntitySymbol]):
+class Neo4jInterface(DatabaseInterface[EntitySymbol]):
     """Neo4j database interface implementation."""
 
     def __init__(self, uri: str, username: str, password: str):

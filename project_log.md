@@ -51,23 +51,27 @@
 
 ### Test Results (Updated 2024-03-18)
 # Test Results
-- Knowledge Graph Tests: ✓ All 10 tests passed
-  - Entity extraction tests
-  - Relationship extraction tests
-  - Error handling tests
+- Knowledge Graph Tests: ✓ All 4 tests passed
+  - Entity extraction
+  - Relationship extraction
+  - Error handling
   - Integration tests
-  - Embedding generation tests
-    - Correct dimension verification
-    - Error handling and retries
-    - Empty input validation
 - Database Query Tests: ✓ All 6 tests passed
-  - search_by_embedding: ✓ Passed
-  - search_by_graph: ✓ Passed
-  - search_structured: ✓ Passed
-  - combined_search: ✓ Passed
-  - search_with_modality: ✓ Passed
-  - error_handling: ✓ Passed
-- Rate limiting and validation tests verified
+  - search_by_embedding
+  - search_by_graph
+  - search_structured
+  - combined_search
+  - search_with_modality
+  - error_handling
+- Document Processing Tests: ✓ All 4 tests passed
+  - PDF extraction
+  - Text chunking
+  - Metadata parsing
+  - Multi-modal support
+- Embedding Generation Tests: ✓ All 3 tests passed
+  - Dense vector generation (1024d)
+  - Error handling and retries
+  - Empty input validation
 
 ### Recent Improvements
 - Enhanced rate limiting logic with proper retry counting
