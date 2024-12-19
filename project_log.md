@@ -62,12 +62,27 @@
     - Empty input validation
 - Database Query Tests: ✓ All 6 tests passed
   - search_by_embedding: ✓ Passed
+    - Semantic search with text-embedding-v3 model
+    - Document retrieval from vector database
+    - Metadata enrichment from MySQL
   - search_by_graph: ✓ Passed
+    - Entity type filtering
+    - Relationship strength validation
+    - Graph traversal verification
   - search_structured: ✓ Passed
+    - MySQL query filtering
+    - Document metadata validation
   - combined_search: ✓ Passed
+    - Cross-database integration
+    - Result deduplication
+    - Document ID validation
   - search_with_modality: ✓ Passed
+    - Text modality handling
+    - Embedding dimension verification
   - error_handling: ✓ Passed
-- Rate limiting and validation tests verified
+    - API error handling
+    - Database connection errors
+    - Invalid input validation
 
 ### Recent Improvements
 - Enhanced rate limiting logic with proper retry counting
