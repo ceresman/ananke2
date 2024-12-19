@@ -2,6 +2,7 @@
 
 from typing import Dict, List, Any
 import json
+import asyncio
 import dashscope
 from http import HTTPStatus
 from ..config import settings
@@ -101,22 +102,29 @@ Just return output as a list of JSON relationships, nothing else."""
             raise ValueError("Input text cannot be empty")
 
         last_error = None
-        for attempt in range(self.max_retries):
+        for attempt in range(3):  # Max 3 retries
             try:
-                response = self.client.embeddings.create(
+                response = dashscope.TextEmbedding.call(
+                    model=dashscope.TextEmbedding.Models.text_embedding_v3,
                     input=text,
-                    model="text-embedding-v3"
+                    dimension=1024,
+                    output_type="dense&sparse"
                 )
-                return response.data[0].embedding
+
+                if response.status_code == HTTPStatus.OK:
+                    # Return dense embeddings
+                    return response.output["embeddings"][0]["dense"]
+
+                last_error = Exception(f"API error: {response.message}")
+                if attempt < 2:  # Only sleep if we're going to retry
+                    await asyncio.sleep(1 * (attempt + 1))  # Exponential backoff
+                continue
 
             except Exception as e:
                 last_error = e
-                if "429" in str(e):
-                    if attempt < self.max_retries - 1:
-                        self._handle_rate_limit(attempt)
-                        continue
-                    raise Exception("Rate limit exceeded")
-                raise e
+                if attempt < 2:  # Only sleep if we're going to retry
+                    await asyncio.sleep(1 * (attempt + 1))
+                continue
 
         raise last_error or Exception("Failed to generate embeddings after max retries")
 

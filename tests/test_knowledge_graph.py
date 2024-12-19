@@ -2,6 +2,8 @@
 
 import pytest
 from unittest.mock import patch, MagicMock, AsyncMock
+from http import HTTPStatus
+import dashscope
 from app.utils.qwen import QwenClient
 from app.tasks import document
 from app.tasks.workflow import process_document_workflow
@@ -132,3 +134,60 @@ async def test_knowledge_graph_task():
         assert result["document_id"] == "test-doc"
         assert result["entities"] == EXPECTED_ENTITIES
         assert result["relationships"] == EXPECTED_RELATIONSHIPS
+
+@pytest.mark.asyncio
+async def test_embedding_generation():
+    """Test embedding generation with text-embedding-v3 model."""
+    test_text = "This is a test document for embedding generation."
+
+    with patch('dashscope.TextEmbedding.call') as mock_call:
+        # Mock successful response
+        mock_response = MagicMock()
+        mock_response.status_code = HTTPStatus.OK
+        mock_response.output = {
+            "embeddings": [{
+                "dense": [0.1] * 1024,  # 1024-dimensional embedding
+                "sparse": {"indices": [1, 2, 3], "values": [0.1, 0.2, 0.3]}
+            }]
+        }
+        mock_call.return_value = mock_response
+
+        client = QwenClient(api_key="sk-46e78b90eb8e4d6ebef79f265891f238")
+        embedding = await client.generate_embeddings(test_text)
+
+        # Verify embedding dimensions
+        assert len(embedding) == 1024
+
+        # Verify correct parameters were used
+        mock_call.assert_called_once_with(
+            model=dashscope.TextEmbedding.Models.text_embedding_v3,
+            input=test_text,
+            dimension=1024,
+            output_type="dense&sparse"
+        )
+
+@pytest.mark.asyncio
+async def test_embedding_error_handling():
+    """Test embedding generation error handling and retries."""
+    test_text = "This is a test document."
+
+    with patch('dashscope.TextEmbedding.call') as mock_call:
+        # Mock failed response
+        mock_response = MagicMock()
+        mock_response.status_code = HTTPStatus.TOO_MANY_REQUESTS
+        mock_response.message = "Rate limit exceeded"
+        mock_call.return_value = mock_response
+
+        client = QwenClient(api_key="sk-46e78b90eb8e4d6ebef79f265891f238")
+        with pytest.raises(Exception, match="API error: Rate limit exceeded"):
+            await client.generate_embeddings(test_text)
+
+        # Should have tried 3 times
+        assert mock_call.call_count == 3
+
+@pytest.mark.asyncio
+async def test_empty_text_embedding():
+    """Test embedding generation with empty text."""
+    client = QwenClient(api_key="sk-46e78b90eb8e4d6ebef79f265891f238")
+    with pytest.raises(ValueError, match="Input text cannot be empty"):
+        await client.generate_embeddings("")
