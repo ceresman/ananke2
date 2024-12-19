@@ -1,32 +1,76 @@
 """Task management router for Ananke2."""
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, File, UploadFile
 from typing import Dict, Any
+from pydantic import BaseModel
 from ..tasks import workflow, celery_app
+import uuid
 
-router = APIRouter(tags=["tasks"])
+router = APIRouter()  # Remove prefix since it's set in main.py
 
-@router.post("/tasks/process-document/{document_id}")
-async def start_document_processing(document_id: str) -> Dict[str, str]:
+class DocumentRequest(BaseModel):
+    """Request model for document processing."""
+    document_path: str
+
+class TaskResponse(BaseModel):
+    task_id: str
+    status: str
+
+@router.post("/process-document", response_model=TaskResponse)
+async def start_document_processing(request: DocumentRequest) -> Dict[str, Any]:
     """Start document processing workflow.
 
     Args:
-        document_id: The ID of the document to process
+        request: The document processing request containing the document path
 
     Returns:
         Dict containing the task ID
     """
     try:
-        task = workflow.process_document_workflow(document_id)
-        result = task.apply_async()
-        return {"task_id": result.id}
+        # Start document processing task
+        task = workflow.process_document_workflow.delay(
+            document_path=request.document_path
+        )
+
+        return {
+            "task_id": task.id,
+            "status": "PENDING"
+        }
     except Exception as e:
         raise HTTPException(
             status_code=500,
             detail=f"Failed to start document processing: {str(e)}"
         )
 
-@router.get("/tasks/{task_id}")
+@router.post("/upload-document")
+async def upload_document(file: UploadFile = File(...)) -> Dict[str, str]:
+    """Upload and process a document.
+
+    Args:
+        file: The uploaded file
+
+    Returns:
+        Dict containing the task ID
+    """
+    try:
+        # Save uploaded file
+        file_path = f"/tmp/{file.filename}"
+        with open(file_path, "wb") as buffer:
+            content = await file.read()
+            buffer.write(content)
+
+        # Start processing task
+        task = workflow.process_document_workflow.delay(
+            document_path=file_path
+        )
+        return {"task_id": task.id}
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to process uploaded document: {str(e)}"
+        )
+
+@router.get("/{task_id}")
 async def get_task_status(task_id: str) -> Dict[str, Any]:
     """Get task status.
 
@@ -38,19 +82,28 @@ async def get_task_status(task_id: str) -> Dict[str, Any]:
     """
     try:
         result = celery_app.AsyncResult(task_id)
-        return {
+        response = {
             "task_id": task_id,
             "status": result.status,
-            "result": result.result,
-            "progress": result.info.get('progress', 0) if result.info else 0
         }
+
+        # Handle different result states
+        if result.ready():
+            if result.successful():
+                response["result"] = result.get()
+            else:
+                response["error"] = str(result.result)
+        else:
+            response["info"] = result.info if isinstance(result.info, dict) else str(result.info)
+
+        return response
     except Exception as e:
         raise HTTPException(
             status_code=500,
             detail=f"Failed to get task status: {str(e)}"
         )
 
-@router.get("/tasks/{task_id}/progress")
+@router.get("/{task_id}/progress")
 async def get_task_progress(task_id: str) -> Dict[str, Any]:
     """Get detailed task progress information.
 
@@ -62,13 +115,20 @@ async def get_task_progress(task_id: str) -> Dict[str, Any]:
     """
     try:
         result = celery_app.AsyncResult(task_id)
-        return {
+        response = {
             "task_id": task_id,
             "status": result.status,
-            "progress": result.info.get('progress', 0) if result.info else 0,
-            "current_operation": result.info.get('current_operation', None) if result.info else None,
-            "errors": result.info.get('errors', []) if result.info else []
         }
+
+        # Add progress info if available
+        if isinstance(result.info, dict):
+            response.update({
+                "progress": result.info.get('progress', 0),
+                "current_operation": result.info.get('current_operation'),
+                "errors": result.info.get('errors', [])
+            })
+
+        return response
     except Exception as e:
         raise HTTPException(
             status_code=500,

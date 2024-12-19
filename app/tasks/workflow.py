@@ -1,34 +1,42 @@
 """Task workflow manager for Ananke2."""
 
+from typing import Dict, Any
 from celery import chain
-from . import document
+from . import celery_app, document
 
-def process_document_workflow(document_id: str):
-    """Create document processing workflow.
-
-    Args:
-        document_id: The ID of the document to process
-
-    Returns:
-        A Celery chain of tasks to process the document
-    """
-    return chain(
-        document.process_document.s(document_id),
-        document.extract_content.s(),
-        document.extract_knowledge_graph.s(),
-        document.process_math_expressions.s()
-    )
-
-def process_documents_batch(document_ids: list[str]):
-    """Create parallel document processing workflows for a batch of documents.
+@celery_app.task(name='app.tasks.workflow.process_arxiv_workflow', bind=True)
+def process_arxiv_workflow(self, arxiv_id: str) -> Dict[str, Any]:
+    """Process arXiv paper workflow.
 
     Args:
-        document_ids: List of document IDs to process
+        arxiv_id: ArXiv paper ID (e.g., '2404.16130')
 
     Returns:
-        List of Celery chains for parallel processing
+        Dict containing processing results
     """
-    return [
-        process_document_workflow(doc_id)
-        for doc_id in document_ids
-    ]
+    try:
+        self.update_state(state='PROCESSING',
+                         meta={'progress': 0, 'current_operation': 'Starting arXiv processing'})
+
+        # Chain arXiv processing tasks
+        workflow = chain(
+            document.download_arxiv.s(arxiv_id=arxiv_id),
+            document.process_document.s(),
+            document.extract_knowledge_graph.s(),
+            document.extract_content.s()
+        )
+        result = workflow.apply_async()
+
+        self.update_state(state='COMPLETED',
+                         meta={'progress': 100, 'current_operation': 'ArXiv processing completed'})
+
+        return {
+            'status': 'COMPLETED',
+            'task_id': result.id,
+            'arxiv_id': arxiv_id
+        }
+
+    except Exception as e:
+        self.update_state(state='FAILED',
+                         meta={'progress': 0, 'current_operation': 'Failed', 'error': str(e)})
+        raise

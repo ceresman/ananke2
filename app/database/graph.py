@@ -1,16 +1,18 @@
-"""Neo4j database interface implementation."""
+"""Neo4j graph database interface implementation."""
 
-from typing import Any, Dict, List, Optional
+import asyncio
+from typing import List, Optional, Dict, Any
 from uuid import UUID
-import neo4j
-from neo4j import AsyncGraphDatabase
+
+from neo4j import AsyncGraphDatabase as Neo4jDriver
+from neo4j.exceptions import ServiceUnavailable
 
 from .base import DatabaseInterface
 from ..models.entities import EntitySymbol
 from ..models.relations import RelationSymbol
 from ..models.triples import TripleSymbol
 
-class Neo4jInterface(DatabaseInterface[EntitySymbol]):
+class AsyncGraphDatabase(DatabaseInterface[EntitySymbol]):
     """Neo4j database interface implementation."""
 
     def __init__(self, uri: str, username: str, password: str):
@@ -21,15 +23,23 @@ class Neo4jInterface(DatabaseInterface[EntitySymbol]):
         self._driver = None
 
     async def connect(self) -> None:
-        """Establish connection to Neo4j database."""
-        self._driver = AsyncGraphDatabase.driver(
-            self.uri, auth=(self.username, self.password)
-        )
+        """Connect to Neo4j database."""
+        try:
+            self._driver = Neo4jDriver.driver(
+                self.uri,
+                auth=(self.username, self.password)
+            )
+            # Test connection
+            async with self._driver.session() as session:
+                await session.run("RETURN 1")
+        except ServiceUnavailable as e:
+            raise ConnectionError(f"Failed to connect to Neo4j: {str(e)}")
 
     async def disconnect(self) -> None:
-        """Close the Neo4j database connection."""
+        """Disconnect from Neo4j database."""
         if self._driver:
             await self._driver.close()
+            self._driver = None
 
     async def create(self, item: EntitySymbol) -> UUID:
         """Create a new entity in Neo4j."""
@@ -73,6 +83,7 @@ class Neo4jInterface(DatabaseInterface[EntitySymbol]):
                 symbol_id=UUID(entity["id"]),
                 name=entity["name"],
                 descriptions=entity["descriptions"],
+                entity_type="ENTITY",  # Add default entity type
                 semantics=[],  # Load semantics separately
                 properties=[],  # Updated from propertys
                 labels=[]  # Updated from label
@@ -136,6 +147,7 @@ class Neo4jInterface(DatabaseInterface[EntitySymbol]):
                     symbol_id=UUID(record["e"]["id"]),
                     name=record["e"]["name"],
                     descriptions=record["e"]["descriptions"],
+                    entity_type="ENTITY",  # Add default entity type
                     semantics=[],
                     properties=[],
                     labels=[]
@@ -169,11 +181,42 @@ class Neo4jInterface(DatabaseInterface[EntitySymbol]):
                     symbol_id=UUID(record["e"]["id"]),
                     name=record["e"]["name"],
                     descriptions=record["e"]["descriptions"],
+                    entity_type="ENTITY",  # Add default entity type
                     semantics=[],
-                    propertys=[],
-                    label=[]
+                    properties=[],
+                    labels=[]
                 )
                 for record in records
             ]
         finally:
             await session.close()
+
+    async def get_all_entities(self) -> List[EntitySymbol]:
+        """Get all entities from the database."""
+        return await self.list(limit=1000)  # Set a reasonable limit
+
+    async def get_all_relationships(self) -> List[RelationSymbol]:
+        """Get all relationships from the database."""
+        if not self._driver:
+            raise ConnectionError("Not connected to database")
+        async with self._driver.session() as session:
+            result = await session.run(
+                """
+                MATCH ()-[r]->()
+                RETURN r, type(r) as type,
+                       startNode(r) as source,
+                       endNode(r) as target
+                LIMIT 1000
+                """
+            )
+            records = await result.all()
+            return [
+                RelationSymbol(
+                    relation_id=UUID(record["r"]["id"]) if "id" in record["r"] else UUID(str(hash(str(record)))),
+                    name=record["type"],
+                    source_id=UUID(record["source"]["id"]),
+                    target_id=UUID(record["target"]["id"]),
+                    properties=record["r"]
+                )
+                for record in records
+            ]

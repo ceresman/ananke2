@@ -44,14 +44,30 @@
 - Qwen API Key: sk-46e78b90eb8e4d6ebef79f265891f238
 - API Base URL: https://dashscope.aliyuncs.com/compatible-mode/v1
 - Test Data: Sample text about Central Institution and Market Strategy Committee
+- Embedding Model: text-embedding-v3
+  - Dimension: 1024
+  - Output Type: dense&sparse
+  - Retry Configuration: 3 attempts with exponential backoff
 
 ### Test Results (Updated 2024-03-18)
-- All 7 test cases passing successfully
-- Rate limiting mechanism verified with exponential backoff (3 retries)
-- Relationship strength validation improved with type checking
-- Error handling enhanced for API failures and invalid inputs
-- Integration with Redis task queue verified
-- Test coverage includes all critical paths
+# Test Results
+- Knowledge Graph Tests: ✓ All 10 tests passed
+  - Entity extraction tests
+  - Relationship extraction tests
+  - Error handling tests
+  - Integration tests
+  - Embedding generation tests
+    - Correct dimension verification
+    - Error handling and retries
+    - Empty input validation
+- Database Query Tests: ✓ All 6 tests passed
+  - search_by_embedding: ✓ Passed
+  - search_by_graph: ✓ Passed
+  - search_structured: ✓ Passed
+  - combined_search: ✓ Passed
+  - search_with_modality: ✓ Passed
+  - error_handling: ✓ Passed
+- Rate limiting and validation tests verified
 
 ### Recent Improvements
 - Enhanced rate limiting logic with proper retry counting
@@ -59,3 +75,8 @@
 - Added comprehensive error messages for validation failures
 - Refactored test mocking strategy for better reliability
 - Fixed edge cases in relationship strength validation
+- Implemented text-embedding-v3 model integration
+  - Added proper error handling with retries
+  - Implemented exponential backoff for rate limits
+  - Added comprehensive embedding tests
+  - Verified 1024-dimensional dense embeddings

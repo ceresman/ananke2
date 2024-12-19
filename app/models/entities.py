@@ -1,45 +1,57 @@
 from uuid import UUID
-from typing import List, Dict, Any, TYPE_CHECKING, ForwardRef
-import numpy as np
-from pydantic import BaseModel, ConfigDict
-from .base import BaseObject
+from typing import List, Dict, Any, Optional
+from pydantic import BaseModel, Field, ConfigDict
+from .types import SemanticBase, SymbolBase, StructuredDataBase
 
-if TYPE_CHECKING:
-    from .structured import StructuredData
-else:
-    StructuredData = ForwardRef('StructuredData')
+class Entity(BaseModel):
+    name: str
+    type: str
+    description: str
 
-class EntitySemantic(BaseObject):
-    """Represents a semantic entity in the knowledge graph."""
+    def dict(self) -> Dict[str, Any]:
+        return {
+            "name": self.name,
+            "type": self.type,
+            "description": self.description
+        }
+
+class Relationship(BaseModel):
+    source: str
+    target: str
+    relationship: str
+    relationship_strength: int
+
+    def dict(self) -> Dict[str, Any]:
+        return {
+            "source": self.source,
+            "target": self.target,
+            "relationship": self.relationship,
+            "relationship_strength": self.relationship_strength
+        }
+
+class EntitySemantic(SemanticBase):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    semantic_id: UUID
-    name: str
-    vector_representation: List[float]  # Using List[float] instead of np.ndarray for serialization
+    name: str = ""
+    vector_representation: List[float] = Field(default_factory=list)
+    semantic_type: str = Field(default="DEFINITION")
+    semantic_value: str = Field(default="")
 
-    def to_chroma(self) -> Dict[str, Any]:
-        """Special handling for Chroma vector database."""
-        data = self.model_dump()
-        data['vector'] = self.vector_representation
-        return data
-
-class EntitySymbol(BaseObject):
-    """Represents a symbolic entity in the knowledge graph."""
+class EntitySymbol(SymbolBase):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    symbol_id: UUID
-    name: str
     entity_type: str
-    descriptions: List[str]
-    semantics: List[EntitySemantic]
-    properties: List[StructuredData]  # Fixed pluralization
-    labels: List[StructuredData]  # Renamed for consistency
+    semantics: List[EntitySemantic] = Field(default_factory=list)
+    properties: List[StructuredDataBase] = Field(default_factory=list)
+    labels: List[StructuredDataBase] = Field(default_factory=list)
 
     def to_neo4j(self) -> Dict[str, Any]:
-        """Special handling for Neo4j graph database."""
         return {
             'symbol_id': str(self.symbol_id),
             'name': self.name,
+            'entity_type': self.entity_type,
             'descriptions': self.descriptions,
-            'labels': [label.data_value for label in self.labels]
+            'properties': [p.model_dump() for p in self.properties],
+            'labels': [l.model_dump() for l in self.labels],
+            'document_id': str(self.document_id) if self.document_id else None
         }

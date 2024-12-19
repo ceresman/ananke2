@@ -9,7 +9,7 @@ import numpy as np
 from .base import DatabaseInterface
 from ..models.entities import EntitySemantic
 
-class ChromaInterface(DatabaseInterface[EntitySemantic]):
+class AsyncVectorDatabase(DatabaseInterface[EntitySemantic]):
     """Chroma vector database interface implementation."""
 
     def __init__(self, host: str = "localhost", port: int = 8000, collection_name: str = "default"):
@@ -129,3 +129,11 @@ class ChromaInterface(DatabaseInterface[EntitySemantic]):
                 result["embeddings"]
             )
         ]
+
+    async def get_all_embeddings(self) -> List[Dict[str, Any]]:
+        """Get all embeddings from the database."""
+        if not self._collection:
+            raise ConnectionError("Not connected to database")
+        results = self._collection.get()
+        return [{"id": id, "embedding": embedding, "metadata": metadata}
+                for id, embedding, metadata in zip(results["ids"], results["embeddings"], results["metadatas"])]
