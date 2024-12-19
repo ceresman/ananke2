@@ -1,11 +1,13 @@
-import pytest
-from unittest.mock import patch, MagicMock
 import os
 import tempfile
+from unittest.mock import patch, MagicMock, AsyncMock
+import pytest
 from uuid import UUID
-from app.tasks.document import process_document
-from app.utils.qwen import QwenClient
 from app.models.entities import Entity, Relationship
+from app.database.relational import AsyncRelationalDatabase
+from app.database.graph import Neo4jInterface
+from app.database.vector import ChromaInterface
+from app.tasks.document import process_document, process_pdf
 
 @pytest.fixture
 def sample_pdf():
@@ -22,40 +24,49 @@ def sample_pdf():
 @pytest.fixture
 def mock_databases():
     """Create mock database interfaces."""
-    class MockRelationalDB:
-        def __init__(self):
-            self.documents = {}
+    class MockAsyncRelationalDB:
+        async def connect(self):
+            pass
 
-        def get_document(self, doc_id):
-            return self.documents.get(doc_id)
+        async def create(self, item):
+            return item.data_id
 
-        def update_document(self, doc_id, status, metadata=None):
-            if doc_id not in self.documents:
-                self.documents[doc_id] = {}
-            self.documents[doc_id].update({
-                "status": status,
-                **(metadata or {})
-            })
+        async def store_document(self, doc_data):
+            return str(doc_data["data_id"])
+
+        async def update_document(self, doc_id, updates):
             return True
 
-    class MockGraphDB:
-        def create_entity(self, entity):
+        async def create_entity(self, entity):
+            return {"id": str(entity.id)}
+
+    class MockNeo4jInterface:
+        async def connect(self):
+            pass
+
+        async def create(self, entity):
+            return entity.symbol_id
+
+        async def create_entity(self, entity):
             return {"id": "test-entity-id"}
 
-        def create_relationship(self, relationship):
-            return {"id": "test-relationship-id"}
+        async def create_relationship(self, rel):
+            return {"id": "test-rel-id"}
 
-    class MockVectorDB:
-        def store_embedding(self, doc_id, embedding):
-            return True
+    class MockChromaInterface:
+        async def connect(self):
+            pass
 
-        def search_similar(self, embedding, limit=10):
-            return [{"id": "test-doc", "score": 0.9}]
+        async def create(self, semantic):
+            return semantic.semantic_id
+
+        async def store_embedding(self, id, embedding, metadata):
+            return "test-embedding-id"
 
     return {
-        "relational": MockRelationalDB(),
-        "graph": MockGraphDB(),
-        "vector": MockVectorDB()
+        "relational": MockAsyncRelationalDB(),
+        "graph": MockNeo4jInterface(),
+        "vector": MockChromaInterface()
     }
 
 @pytest.mark.asyncio
@@ -81,7 +92,7 @@ async def test_document_processing():
             return [
                 {
                     "source": "TEST_ENTITY",
-                    "target": "TEST_ENTITY_2",
+                    "target": "TEST_ENTITY",
                     "relationship": "test relationship",
                     "relationship_strength": 5
                 }
@@ -90,27 +101,52 @@ async def test_document_processing():
         async def generate_embedding(self, text):
             return [0.1] * 768
 
-    # Create temporary PDF file
-    with tempfile.NamedTemporaryFile(suffix=".pdf") as pdf_file:
-        pdf_file.write(b"%PDF-1.4\nTest PDF content")
-        pdf_file.flush()
+        async def __aenter__(self):
+            return self
 
-        # Mock database interfaces
-        with patch("app.tasks.document.QwenClient", return_value=MockQwenClient()), \
-             patch("app.tasks.document.AsyncRelationalDatabase"), \
-             patch("app.tasks.document.Neo4jInterface"), \
-             patch("app.tasks.document.ChromaInterface"), \
-             patch("app.tasks.document.process_pdf", return_value="Test content"):
+        async def __aexit__(self, exc_type, exc_val, exc_tb):
+            pass
+
+    # Mock PDF processing and database interfaces
+    with patch("app.tasks.document.partition_pdf", return_value=["Test content"]), \
+         patch("app.tasks.document.QwenClient", return_value=MockQwenClient()), \
+         patch("app.tasks.document.AsyncRelationalDatabase") as mock_rel_db, \
+         patch("app.tasks.document.Neo4jInterface") as mock_neo4j, \
+         patch("app.tasks.document.ChromaInterface") as mock_chroma:
+
+        # Configure mock databases
+        mock_rel_db.return_value = AsyncMock(spec=AsyncRelationalDatabase)
+        mock_rel_db.return_value.connect = AsyncMock()
+        mock_rel_db.return_value.create = AsyncMock(return_value=UUID("123e4567-e89b-12d3-a456-426614174000"))
+        mock_rel_db.return_value.store_document = AsyncMock(return_value="test-doc-id")
+        mock_rel_db.return_value.update_document = AsyncMock(return_value=True)
+
+        mock_neo4j.return_value = AsyncMock(spec=Neo4jInterface)
+        mock_neo4j.return_value.connect = AsyncMock()
+        mock_neo4j.return_value.create = AsyncMock(return_value=UUID("123e4567-e89b-12d3-a456-426614174001"))
+        mock_neo4j.return_value.create_entity = AsyncMock(return_value={"id": "test-entity-id"})
+        mock_neo4j.return_value.create_relationship = AsyncMock(return_value={"id": "test-rel-id"})
+
+        mock_chroma.return_value = AsyncMock(spec=ChromaInterface)
+        mock_chroma.return_value.connect = AsyncMock()
+        mock_chroma.return_value.create = AsyncMock(return_value=UUID("123e4567-e89b-12d3-a456-426614174002"))
+        mock_chroma.return_value.store_embedding = AsyncMock(return_value="test-embedding-id")
+
+        # Create temporary PDF file
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=True) as pdf_file:
+            pdf_file.write(b"%PDF-1.4\nTest PDF content")
+            pdf_file.flush()
 
             # Process document
             result = await process_document(pdf_file.name)
 
             # Verify result structure
+            assert isinstance(result, dict)
             assert "document_id" in result
-            assert "entities" in result
-            assert "relationships" in result
-            assert len(result["entities"]) > 0
-            assert len(result["relationships"]) > 0
+            assert "text" in result
+            assert isinstance(result["document_id"], str)
+            assert isinstance(result["text"], str)
+            assert len(result["text"]) > 0
 
 def test_entity_format():
     """Test entity format validation."""

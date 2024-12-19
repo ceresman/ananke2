@@ -7,21 +7,34 @@ from ..models.entities import Entity, Relationship
 def run_async(coro):
     """Run an async coroutine in a sync context."""
     try:
-        # Get or create event loop
+        # Get current event loop
         try:
             loop = asyncio.get_event_loop()
         except RuntimeError:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
 
-        # If loop is running (we're in an async context)
+        # If we're in an async context (loop is running)
         if loop.is_running():
-            # Create new loop for sync operation
-            new_loop = asyncio.new_event_loop()
-            try:
-                return new_loop.run_until_complete(coro)
-            finally:
-                new_loop.close()
+            # Use asyncio.run() in a new thread to avoid loop conflicts
+            import threading
+            result = None
+            exception = None
+
+            def run_coro():
+                nonlocal result, exception
+                try:
+                    result = asyncio.run(coro)
+                except Exception as e:
+                    exception = e
+
+            thread = threading.Thread(target=run_coro)
+            thread.start()
+            thread.join()
+
+            if exception:
+                raise exception
+            return result
         else:
             # Use existing loop
             return loop.run_until_complete(coro)

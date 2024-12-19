@@ -33,8 +33,14 @@ class Settings(BaseSettings):
     REDIS_DB: int = 0
 
     # Celery settings
-    CELERY_BROKER_URL: str = "redis://redis:6379/0"  # Use container name
-    CELERY_RESULT_BACKEND: str = "redis://redis:6379/0"
+    CELERY_BROKER_URL: str = Field(
+        default="redis://redis:6379/0",
+        description="Celery broker URL"
+    )
+    CELERY_RESULT_BACKEND: str = Field(
+        default="redis://redis:6379/0",
+        description="Celery result backend URL"
+    )
 
     # Qwen API settings
     QWEN_API_KEY: str = Field(
@@ -57,7 +63,19 @@ class Settings(BaseSettings):
 
     def get_chroma_host(self) -> str:
         """Get ChromaDB host based on environment."""
-        return "chroma" if self.DOCKER_NETWORK else "localhost"
+        return "chromadb" if self.DOCKER_NETWORK else "localhost"
+
+    def get_celery_broker_url(self) -> str:
+        """Get Celery broker URL based on environment."""
+        if self.DOCKER_NETWORK:
+            return f"redis://{self.get_redis_host()}:{self.REDIS_PORT}/{self.REDIS_DB}"
+        return os.getenv("CELERY_BROKER_URL", "sqlite:///celery-broker.sqlite")
+
+    def get_celery_result_backend(self) -> str:
+        """Get Celery result backend URL based on environment."""
+        if self.DOCKER_NETWORK:
+            return f"redis://{self.get_redis_host()}:{self.REDIS_PORT}/{self.REDIS_DB}"
+        return os.getenv("CELERY_RESULT_BACKEND", "sqlite:///celery-results.sqlite")
 
     @computed_field
     @property
@@ -94,6 +112,18 @@ class Settings(BaseSettings):
     def qwen_api_key(self) -> str:
         """Get Qwen API key."""
         return self.QWEN_API_KEY
+
+    @computed_field
+    @property
+    def broker_url(self) -> str:
+        """Get Celery broker URL."""
+        return self.get_celery_broker_url()
+
+    @computed_field
+    @property
+    def result_backend(self) -> str:
+        """Get Celery result backend URL."""
+        return self.get_celery_result_backend()
 
     class Config:
         """Pydantic config."""

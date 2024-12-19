@@ -8,13 +8,32 @@ from http import HTTPStatus
 from celery import shared_task
 import arxiv
 import json
+from uuid import uuid4
 from ..utils.qwen import QwenClient
 from ..database.sync_wrappers import get_sync_relational_db, get_sync_vector_db, get_sync_graph_db
+from ..database.relational import AsyncRelationalDatabase
+from ..database.graph import Neo4jInterface
+from ..database.vector import ChromaInterface
 from ..models.entities import Entity, Relationship
 from ..config import settings
 
 # Initialize Qwen client
 qwen_client = QwenClient(api_key=settings.QWEN_API_KEY)
+
+async def process_pdf(pdf_path: str) -> str:
+    """Process PDF file and extract text content."""
+    if not os.path.exists(pdf_path):
+        raise FileNotFoundError(f"PDF file not found: {pdf_path}")
+
+    try:
+        # Process PDF using unstructured library
+        elements = partition_pdf(filename=pdf_path)
+        text = "\n".join([str(element) for element in elements])
+        return text
+    except Exception as e:
+        print(f"Error processing PDF: {str(e)}")
+        raise
+
 
 @shared_task(name='document.download_arxiv')
 def download_arxiv(arxiv_id: str) -> dict:
@@ -59,23 +78,21 @@ def download_arxiv(arxiv_id: str) -> dict:
         raise
 
 @shared_task(name='document.process_document')
-def process_document(document_path: str) -> dict:
+async def process_document(document_path: str) -> dict:
     """Process PDF document and extract text content."""
     print(f"Starting document processing for {document_path}")
     if not os.path.exists(document_path):
         raise FileNotFoundError(f"PDF file not found: {document_path}")
 
     try:
-        print("Opening PDF document...")
-        # Process PDF using unstructured library directly
-        elements = partition_pdf(filename=document_path)
-        text = "\n".join([str(element) for element in elements])
+        print("Processing PDF document...")
+        # Process PDF using process_pdf function
+        text = await process_pdf(document_path)
         print(f"Extracted {len(text)} characters of text")
 
         # Store document metadata
         print("Storing document in relational database...")
         rel_db = get_sync_relational_db()
-        from uuid import uuid4
         doc_id = uuid4()
         doc_data = {
             "data_id": doc_id,
@@ -96,58 +113,19 @@ def process_document(document_path: str) -> dict:
         raise
 
 @shared_task(name='document.extract_knowledge_graph')
-def extract_knowledge_graph(result_dict: dict) -> dict:
+async def extract_knowledge_graph(result_dict: dict) -> dict:
     """Extract knowledge graph from document text."""
     doc_id = result_dict.get("doc_id")
     text = result_dict.get("text")
 
     print(f"Starting knowledge graph extraction for document {doc_id}")
     try:
-        # Extract entities and relationships using Qwen format
-        prompt = """Given a text document that is potentially relevant to this activity and a list of entity types, identify all entities of those types from the text and all relationships among the identified entities.
+        # Initialize QwenClient
+        client = QwenClient(api_key=settings.QWEN_API_KEY)
 
-For each identified entity, extract:
-- entity_name: Name of the entity, capitalized
-- entity_type: One of [PERSON, ORGANIZATION, GEO, EVENT, CONCEPT]
-- entity_description: Comprehensive description of the entity's attributes and activities
-
-For each relationship between entities, extract:
-- source_entity: name of the source entity
-- target_entity: name of the target entity
-- relationship_description: explanation of the relationship
-- relationship_strength: integer score 1-10 indicating strength
-
-Format as JSON:
-{"entities": [{"name": <name>, "type": <type>, "description": <description>}],
- "relationships": [{"source": <source>, "target": <target>, "relationship": <description>, "relationship_strength": <strength>}]}
-
-Text:
-{text}
-
-Just return the JSON output, nothing else."""
-
-        # Call Qwen API
-        resp = dashscope.Generation.call(
-            model="qwen-max",
-            prompt=prompt.format(text=text),
-            result_format='message'
-        )
-
-        if resp.status_code != HTTPStatus.OK:
-            raise Exception(f"Failed to extract knowledge graph: {resp.message}")
-
-        try:
-            # Parse results
-            result = json.loads(resp.output.choices[0].message.content)
-            if not isinstance(result, dict) or "entities" not in result:
-                raise ValueError("Invalid response format from Qwen API")
-
-            entities = result.get("entities", [])
-            relationships = result.get("relationships", [])
-        except json.JSONDecodeError:
-            raise Exception("Failed to parse Qwen API response")
-        except KeyError as e:
-            raise Exception(f"Missing required field in response: {str(e)}")
+        # Extract entities and relationships using async calls
+        entities = await client.extract_entities(text)
+        relationships = await client.extract_relationships(text)
 
         # Store in graph database
         graph_db = get_sync_graph_db()
@@ -157,6 +135,7 @@ Just return the JSON output, nothing else."""
             graph_db.store_relationship(Relationship(**rel))
 
         return {
+            "status": "completed",
             "doc_id": doc_id,
             "entities": entities,
             "relationships": relationships
@@ -164,7 +143,11 @@ Just return the JSON output, nothing else."""
 
     except Exception as e:
         print(f"Error extracting knowledge graph: {str(e)}")
-        raise
+        return {
+            "status": "failed",
+            "doc_id": doc_id,
+            "error": str(e)
+        }
 
 @shared_task(name='document.extract_content')
 def extract_content(result_dict: dict) -> dict:

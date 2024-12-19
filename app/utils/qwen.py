@@ -1,6 +1,6 @@
 """Qwen API client for knowledge graph extraction and embeddings."""
 
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 import json
 import asyncio
 import dashscope
@@ -10,9 +10,11 @@ from ..config import settings
 class QwenClient:
     """Client for interacting with Qwen API."""
 
-    def __init__(self, api_key: str = None):
+    def __init__(self, api_key: Optional[str] = None):
         """Initialize Qwen client."""
-        self.api_key = api_key or settings.QWEN_API_KEY
+        self.api_key = api_key
+        if not self.api_key:
+            self.api_key = settings.QWEN_API_KEY
         self.base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
         self.max_retries = 3
         self.retry_delay = 1
@@ -23,43 +25,39 @@ class QwenClient:
         if not text.strip():
             raise ValueError("Input text cannot be empty")
 
-        result = await self._make_request(text)
-        entities = [e for e in result if "name" in e and "type" in e]
-        return entities
+        result = await self._make_request(text, request_type="entities")
+        if not result:
+            return []
+        return result
 
-    async def _make_request(self, text: str) -> List[Dict[str, Any]]:
+    async def _make_request(self, text: str, request_type: str = "entities") -> List[Dict[str, Any]]:
         """Make request to Qwen API with retries."""
-        prompt = """Given a text document that is potentially relevant to this activity and a list of entity types, identify all entities of those types from the text.
-
-For each identified entity, extract the following information:
-- entity_name: Name of the entity, capitalized
-- entity_type: One of the following types: [PERSON, ORGANIZATION, GEO, EVENT, CONCEPT]
-- entity_description: Comprehensive description of the entity's attributes and activities
-
-Format each entity output as a JSON entry with the following format:
-{"name": <entity name>, "type": <type>, "description": <entity description>}
-
-Text:
-{text}
-
-Just return output as a list of JSON entities, nothing else."""
+        prompt = self._get_prompt(text, request_type)
 
         last_error = None
         for attempt in range(self.max_retries):
             try:
                 resp = dashscope.Generation.call(
                     model="qwen-max",
-                    prompt=prompt.format(text=text),
+                    prompt=prompt,
                     result_format='message'
                 )
 
                 if resp.status_code == HTTPStatus.OK:
                     try:
-                        return json.loads(resp.output.choices[0].message.content)
-                    except json.JSONDecodeError:
+                        content = resp.output.choices[0].message.content
+                        result = json.loads(content)
+                        if isinstance(result, list):
+                            return result
+                        return []
+                    except (json.JSONDecodeError, AttributeError, IndexError, TypeError):
                         return []
 
-                last_error = Exception(f"API error: {resp.message}")
+                if resp.status_code == HTTPStatus.TOO_MANY_REQUESTS:
+                    last_error = Exception("API error: Rate limit exceeded")
+                else:
+                    last_error = Exception(f"API error: {resp.message}")
+
                 if attempt < self.max_retries - 1:
                     await asyncio.sleep(self.retry_delay * (attempt + 1))
                 continue
@@ -70,17 +68,52 @@ Just return output as a list of JSON entities, nothing else."""
                     await asyncio.sleep(self.retry_delay * (attempt + 1))
                 continue
 
-        raise last_error or Exception("Failed to extract entities after max retries")
+        raise last_error or Exception("Failed to extract data after max retries")
+
+    def _get_prompt(self, text: str, request_type: str) -> str:
+        """Get prompt based on request type."""
+        if request_type == "entities":
+            return f"""Given a text document that is potentially relevant to this activity and a list of entity types, identify all entities of those types from the text.
+
+For each identified entity, extract the following information:
+- entity_name: Name of the entity, capitalized
+- entity_type: One of the following types: [PERSON, ORGANIZATION, GEO, EVENT, CONCEPT]
+- entity_description: Comprehensive description of the entity's attributes and activities
+
+Format each entity output as a JSON entry with the following format:
+{{"name": "<entity name>", "type": "<type>", "description": "<entity description>"}}
+
+Text:
+{text}
+
+Just return output as a list of JSON entities, nothing else."""
+        else:
+            return f"""Given a text document, identify all relationships between entities in the text.
+
+For each relationship, extract:
+- source_entity: Name of the source entity (capitalized)
+- target_entity: Name of the target entity (capitalized)
+- relationship_description: Explanation of how they are related
+- relationship_strength: Integer score 1-10 indicating strength
+
+Format as JSON:
+{{"source": "<source>", "target": "<target>", "relationship": "<description>", "relationship_strength": <strength>}}
+
+Text:
+{text}
+
+Just return output as a list of JSON relationships, nothing else."""
 
     async def extract_relationships(self, text: str) -> List[Dict[str, Any]]:
         """Extract relationships from text using Qwen API."""
         if not text.strip():
             raise ValueError("Input text cannot be empty")
 
-        result = await self._make_request(text)
-        relationships = [e for e in result if "source" in e and "target" in e]
-        self._validate_relationships(relationships)
-        return relationships
+        result = await self._make_request(text, request_type="relationships")
+        if not result:
+            return []
+        self._validate_relationships(result)
+        return result
 
     def _validate_relationships(self, relationships: List[Dict[str, Any]]) -> None:
         """Validate relationship strength is between 1 and 10."""
@@ -95,7 +128,7 @@ Just return output as a list of JSON entities, nothing else."""
             raise ValueError("Input text cannot be empty")
 
         last_error = None
-        for attempt in range(3):  # Max 3 retries
+        for attempt in range(self.max_retries):
             try:
                 response = dashscope.TextEmbedding.call(
                     model=dashscope.TextEmbedding.Models.text_embedding_v3,
@@ -105,17 +138,24 @@ Just return output as a list of JSON entities, nothing else."""
                 )
 
                 if response.status_code == HTTPStatus.OK:
-                    return response.output["embeddings"][0]["dense"]
+                    try:
+                        return response.output["embeddings"][0]["dense"]
+                    except (KeyError, IndexError):
+                        raise Exception("Invalid embedding response format")
 
-                last_error = Exception(f"API error: {response.message}")
-                if attempt < 2:  # Only sleep if we're going to retry
-                    await asyncio.sleep(1 * (attempt + 1))
+                if response.status_code == HTTPStatus.TOO_MANY_REQUESTS:
+                    last_error = Exception("API error: Rate limit exceeded")
+                else:
+                    last_error = Exception(f"API error: {response.message}")
+
+                if attempt < self.max_retries - 1:
+                    await asyncio.sleep(self.retry_delay * (attempt + 1))
                 continue
 
             except Exception as e:
                 last_error = e
-                if attempt < 2:
-                    await asyncio.sleep(1 * (attempt + 1))
+                if attempt < self.max_retries - 1:
+                    await asyncio.sleep(self.retry_delay * (attempt + 1))
                 continue
 
         raise last_error or Exception("Failed to generate embeddings after max retries")
