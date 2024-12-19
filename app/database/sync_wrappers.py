@@ -34,11 +34,11 @@ class GraphDatabase:
 
     def __init__(self, uri: str, username: str, password: str):
         """Initialize Neo4j interface."""
-        from .graph import AsyncGraphDatabase
+        from .graph import Neo4jInterface
         # Replace localhost with neo4j in URI if needed
         if "localhost" in uri:
             uri = uri.replace("localhost", "neo4j")
-        self._async_db = AsyncGraphDatabase(
+        self._async_db = Neo4jInterface(
             uri=uri,
             username=username,
             password=password
@@ -128,8 +128,8 @@ class VectorDatabase:
 
     def __init__(self, host: str, port: int, collection_name: str = "ananke2"):
         """Initialize ChromaDB interface."""
-        from .vector import AsyncVectorDatabase
-        self._async_db = AsyncVectorDatabase(
+        from .vector import ChromaInterface
+        self._async_db = ChromaInterface(
             host=host,
             port=port,
             collection_name=collection_name
