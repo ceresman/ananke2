@@ -3,15 +3,17 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-Ananke2 documentation
-=====================
+Ananke2 Knowledge Framework
+=========================
 
-Add your content using ``reStructuredText`` syntax. See the
-`reStructuredText <https://www.sphinx-doc.org/en/master/usage/restructuredtext/index.html>`_
-documentation for details.
-
+Welcome to the Ananke2 Knowledge Framework documentation. This framework provides
+a comprehensive solution for document processing, knowledge extraction, and
+knowledge graph generation.
 
 .. toctree::
    :maxdepth: 2
    :caption: Contents:
+
+   process_flows
+   architecture
 
