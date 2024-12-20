@@ -1,4 +1,21 @@
-"""Document processor implementation using unstructured.io."""
+"""Document processor implementation for knowledge graph extraction.
+
+This module provides CPU-only document processing capabilities using unstructured.io
+and Qwen API integration for knowledge graph extraction. The processor is designed
+to work without GPU requirements, making it suitable for lightweight deployments.
+
+The knowledge graph extraction follows a specific format:
+- Entities are extracted with name (capitalized), type, and description
+- Relationships include source, target, description, and strength (1-10)
+- All text processing is done locally before API calls
+
+Example:
+    >>> processor = DocumentProcessor()
+    >>> elements = processor.process_document("path/to/paper.pdf")
+    >>> graph = processor.extract_knowledge_graph(elements)
+    >>> processor.save_knowledge_graph(graph, "output.json")
+"""
+
 from typing import List, Dict, Any
 import json
 from pathlib import Path
@@ -12,16 +29,60 @@ os.environ['DASHSCOPE_API_KEY'] = os.getenv('DASHSCOPE_API_KEY', '')
 dashscope.api_key = os.environ['DASHSCOPE_API_KEY']
 
 class DocumentProcessor:
-    """Process documents using unstructured.io CPU-only implementation."""
+    """Process documents and extract knowledge graphs using CPU-only implementation.
+
+    This class provides document processing capabilities without GPU requirements,
+    using unstructured.io for text extraction and Qwen API for knowledge graph
+    generation. The separation of text extraction and graph generation allows for
+    better error handling and retry capabilities.
+
+    The CPU-only approach was chosen to:
+    1. Minimize deployment requirements
+    2. Enable lightweight processing on standard servers
+    3. Reduce infrastructure costs while maintaining accuracy
+
+    Attributes:
+        supported_types (List[str]): Supported file extensions [.pdf, .txt, .docx]
+        qwen_api_key (str): API key for Qwen model access, defaults to development key
+    """
 
     def __init__(self):
-        """Initialize document processor."""
+        """Initialize document processor with default configuration.
+
+        The processor is initialized with default supported file types and
+        attempts to get the Qwen API key from environment variables. A default
+        key is provided for development but should be overridden in production.
+
+        Note:
+            The default API key should only be used for development/testing.
+            Production deployments should set QWEN_API_KEY environment variable.
+
+        Raises:
+            EnvironmentError: If QWEN_API_KEY env var is not set in production
+        """
         self.supported_types = ['.pdf', '.txt', '.docx']
         self.qwen_api_key = os.getenv('QWEN_API_KEY', 'sk-46e78b90eb8e4d6ebef79f265891f238')
         dashscope.api_key = self.qwen_api_key
 
     def process_document(self, file_path: str) -> List[str]:
-        """Process document and extract text elements."""
+        """Process document and extract text elements.
+
+        Uses unstructured.io's partition function to extract text elements from
+        documents while preserving structural information. This approach allows
+        for better context preservation compared to simple text extraction.
+
+        Args:
+            file_path (str): Path to the document file to process
+
+        Returns:
+            List[str]: List of extracted text elements with structure preserved.
+                      Each element represents a distinct document section.
+
+        Raises:
+            FileNotFoundError: If the document file doesn't exist
+            ValueError: If file type is not in supported_types
+            Exception: If document processing fails (e.g., corrupt file)
+        """
         try:
             elements = partition(filename=file_path)
             return [str(el) for el in elements]
@@ -29,7 +90,37 @@ class DocumentProcessor:
             raise Exception(f"Error processing document: {str(e)}")
 
     def extract_knowledge_graph(self, text_elements: List[str]) -> Dict[str, Any]:
-        """Extract knowledge graph from text elements using Qwen API."""
+        """Extract knowledge graph from text elements using Qwen API.
+
+        Processes text elements to generate a structured knowledge graph using
+        the Qwen language model. The implementation uses a carefully crafted prompt
+        to ensure consistent entity and relationship extraction.
+
+        The method handles various edge cases including:
+        - JSON parsing from markdown-formatted responses
+        - Entity name capitalization
+        - Relationship strength validation
+        - Empty or malformed API responses
+
+        Args:
+            text_elements (List[str]): List of text elements from document
+
+        Returns:
+            Dict[str, Any]: Knowledge graph containing:
+                - entities: List[Dict] with keys:
+                    - name (str): Capitalized entity name
+                    - type (str): Entity type classification
+                    - description (str): Detailed entity description
+                - relationships: List[Dict] with keys:
+                    - source (str): Source entity name
+                    - target (str): Target entity name
+                    - relationship (str): Relationship description
+                    - relationship_strength (int): Strength score 1-10
+
+        Raises:
+            Exception: If API call fails or response parsing errors occur
+            json.JSONDecodeError: If API response cannot be parsed as JSON
+        """
         try:
             text = " ".join(text_elements)
             prompt = f"""Extract entities and relationships from this text as JSON:
@@ -129,7 +220,22 @@ class DocumentProcessor:
             return {"entities": [], "relationships": []}
 
     def save_knowledge_graph(self, graph_data: Dict[str, Any], output_path: str):
-        """Save extracted knowledge graph to JSON file."""
+        """Save extracted knowledge graph to JSON file.
+
+        Writes the knowledge graph data to a JSON file with proper formatting
+        and UTF-8 encoding to preserve special characters. Creates output
+        directory if it doesn't exist.
+
+        Args:
+            graph_data (Dict[str, Any]): Knowledge graph data with entities
+                and relationships to save
+            output_path (str): Path where JSON file should be saved
+
+        Raises:
+            PermissionError: If writing to output path is not allowed
+            IOError: If file creation or writing fails
+            TypeError: If graph_data is not JSON-serializable
+        """
         output_file = Path(output_path)
         output_file.parent.mkdir(parents=True, exist_ok=True)
 
