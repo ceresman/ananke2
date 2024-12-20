@@ -4,7 +4,7 @@
    contain the root `toctree` directive.
 
 Ananke2 Knowledge Framework
-=========================
+===========================
 
 Welcome to the Ananke2 Knowledge Framework documentation. This framework provides
 a comprehensive solution for document processing, knowledge extraction, and

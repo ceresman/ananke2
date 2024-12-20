@@ -37,7 +37,7 @@ Text extraction is handled by the unstructured.io library:
     - Content cleaning and normalization
 
 Knowledge Graph Generation
-------------------------
+=========================
 
 Knowledge is extracted and organized using the Qwen API:
 
