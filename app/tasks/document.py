@@ -1,4 +1,17 @@
-"""Document processing tasks for Ananke2."""
+"""Document processing tasks for Ananke2.
+
+This module implements Celery tasks for document processing in the Ananke2
+knowledge framework. It handles:
+- PDF document text extraction using unstructured.io
+- arXiv paper downloading and metadata storage
+- Knowledge graph extraction using Qwen API
+- Content embedding generation and storage
+
+The tasks form a processing pipeline that can be chained together:
+1. download_arxiv -> process_document
+2. process_document -> extract_knowledge_graph
+3. process_document -> extract_content
+"""
 
 import os
 from typing import Dict, Any, Optional
@@ -21,7 +34,27 @@ from ..config import settings
 qwen_client = QwenClient(api_key=settings.QWEN_API_KEY)
 
 async def process_pdf(pdf_path: str) -> str:
-    """Process PDF file and extract text content."""
+    """Process PDF file and extract text content.
+
+    Uses unstructured.io's partition_pdf function to extract text
+    content from PDF files while preserving document structure.
+
+    Args:
+        pdf_path (str): Path to the PDF file
+
+    Returns:
+        str: Extracted text content from the PDF
+
+    Raises:
+        FileNotFoundError: If PDF file does not exist
+        Exception: If PDF processing fails
+
+    Example:
+        ```python
+        text = await process_pdf("/path/to/paper.pdf")
+        print(f"Extracted {len(text)} characters")
+        ```
+    """
     if not os.path.exists(pdf_path):
         raise FileNotFoundError(f"PDF file not found: {pdf_path}")
 
@@ -37,7 +70,36 @@ async def process_pdf(pdf_path: str) -> str:
 
 @shared_task(name='document.download_arxiv')
 def download_arxiv(arxiv_id: str) -> dict:
-    """Download arXiv paper and store metadata."""
+    """Download arXiv paper and store metadata.
+
+    Downloads a paper from arXiv using its ID, stores the PDF locally,
+    and saves metadata to the relational database. This task is typically
+    the first step in processing arXiv papers.
+
+    Args:
+        arxiv_id (str): arXiv paper identifier (e.g., "2101.00123")
+
+    Returns:
+        dict: Contains:
+            - doc_id (str): UUID of stored document
+            - pdf_path (str): Path to downloaded PDF
+
+    Raises:
+        Exception: If paper download or metadata storage fails
+
+    Example:
+        ```python
+        from celery import chain
+        from .tasks import download_arxiv, process_document
+
+        # Chain download and processing
+        workflow = chain(
+            download_arxiv.s("2101.00123"),
+            process_document.s()
+        )
+        result = workflow.apply_async()
+        ```
+    """
     print(f"Downloading arXiv paper {arxiv_id}")
 
     try:
@@ -79,7 +141,36 @@ def download_arxiv(arxiv_id: str) -> dict:
 
 @shared_task(name='document.process_document')
 async def process_document(document_path: str) -> dict:
-    """Process PDF document and extract text content."""
+    """Process PDF document and extract text content.
+
+    Extracts text content from a PDF document and stores it in the
+    relational database with metadata. This task can be chained with
+    either extract_knowledge_graph or extract_content for further processing.
+
+    Args:
+        document_path (str): Path to the PDF document or result dict from download_arxiv
+
+    Returns:
+        dict: Contains:
+            - doc_id (str): UUID of processed document
+            - text (str): Extracted text content
+
+    Raises:
+        FileNotFoundError: If document does not exist
+        Exception: If processing fails
+
+    Example:
+        ```python
+        # Process a local PDF
+        result = await process_document("/path/to/paper.pdf")
+
+        # Chain with knowledge graph extraction
+        workflow = chain(
+            process_document.s("/path/to/paper.pdf"),
+            extract_knowledge_graph.s()
+        )
+        ```
+    """
     print(f"Starting document processing for {document_path}")
     if not os.path.exists(document_path):
         raise FileNotFoundError(f"PDF file not found: {document_path}")
@@ -114,7 +205,38 @@ async def process_document(document_path: str) -> dict:
 
 @shared_task(name='document.extract_knowledge_graph')
 async def extract_knowledge_graph(result_dict: dict) -> dict:
-    """Extract knowledge graph from document text."""
+    """Extract knowledge graph from document text.
+
+    Uses Qwen API to extract entities and relationships from document text
+    and stores them in the Neo4j graph database. This task is typically
+    chained after process_document.
+
+    Args:
+        result_dict (dict): Contains:
+            - doc_id (str): Document UUID
+            - text (str): Document text content
+
+    Returns:
+        dict: Contains:
+            - status (str): "completed" or "failed"
+            - doc_id (str): Document UUID
+            - entities (List[dict]): Extracted entities
+            - relationships (List[dict]): Extracted relationships
+            - error (str, optional): Error message if failed
+
+    Example:
+        ```python
+        # Extract knowledge graph from processed document
+        result = await extract_knowledge_graph({
+            "doc_id": "123e4567-e89b-12d3-a456-426614174000",
+            "text": "Einstein developed the theory of relativity..."
+        })
+
+        # Access extracted entities
+        for entity in result['entities']:
+            print(f"Found entity: {entity['name']} ({entity['type']})")
+        ```
+    """
     doc_id = result_dict.get("doc_id")
     text = result_dict.get("text")
 
@@ -151,7 +273,42 @@ async def extract_knowledge_graph(result_dict: dict) -> dict:
 
 @shared_task(name='document.extract_content')
 def extract_content(result_dict: dict) -> dict:
-    """Extract and store content in vector and relational databases."""
+    """Extract and store content in vector and relational databases.
+
+    Generates embeddings for document content using DashScope's text-embedding-v3
+    model and stores them in the Chroma vector database. Updates document status
+    in MySQL database. This task is typically chained after process_document.
+
+    Args:
+        result_dict (dict): Contains:
+            - doc_id (str): Document UUID
+            - text (str): Document text content
+
+    Returns:
+        dict: Contains:
+            - status (str): "success"
+            - doc_id (str): Document UUID
+            - embedding_id (str): ID of stored embedding
+
+    Raises:
+        ValueError: If document not found in database
+        Exception: If embedding generation or storage fails
+
+    Example:
+        ```python
+        # Generate and store embeddings for processed document
+        result = await extract_content({
+            "doc_id": "123e4567-e89b-12d3-a456-426614174000",
+            "text": "Document content..."
+        })
+
+        # Chain processing and embedding generation
+        workflow = chain(
+            process_document.s("/path/to/paper.pdf"),
+            extract_content.s()
+        )
+        ```
+    """
     doc_id = result_dict.get("doc_id")
     text = result_dict.get("text")
 
