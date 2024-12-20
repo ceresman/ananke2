@@ -71,6 +71,8 @@ export default function Home() {
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
 
+  console.log('Current graphData:', graphData);
+
   const handleSearch = async () => {
     if (!searchQuery.trim()) return;
     setError(null);
@@ -188,7 +190,7 @@ export default function Home() {
           {/* Graph Visualization */}
           <div className="lg:col-span-2">
             <Card className="p-4">
-              <div className="aspect-square">
+              <div className="w-full h-[600px]">
                 <ForceGraph2D
                   graphData={graphData}
                   nodeLabel="name"
