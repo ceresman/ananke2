@@ -1,10 +1,10 @@
 System Architecture
-=================
+===================
 
 This document describes the architectural components of the Ananke2 knowledge framework.
 
 Database Layer
-------------
+==============
 
 The system employs a multi-database architecture for specialized data storage:
 
@@ -33,7 +33,7 @@ The system employs a multi-database architecture for specialized data storage:
     - Cache management
 
 Model Layer
-----------
+===========
 
 Core data models and their relationships:
 
@@ -62,7 +62,7 @@ Core data models and their relationships:
     - Expression evaluation
 
 Service Layer
------------
+=============
 
 Core services managing business logic:
 
@@ -91,7 +91,7 @@ Core services managing business logic:
     - Task recovery
 
 API Layer
---------
+=========
 
 External and internal API interfaces:
 
@@ -120,7 +120,7 @@ External and internal API interfaces:
     - Circuit breaking
 
 Frontend Layer
-------------
+==============
 
 User interface components and architecture:
 
@@ -149,7 +149,7 @@ User interface components and architecture:
     - Retry logic
 
 Infrastructure Layer
------------------
+==================
 
 System infrastructure and deployment:
 
@@ -178,7 +178,7 @@ System infrastructure and deployment:
     - System health
 
 Security Layer
-------------
+=============
 
 Security measures and implementations:
 

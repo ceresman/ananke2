@@ -6,7 +6,7 @@ The system processes documents through multiple stages to extract knowledge and 
 a comprehensive knowledge graph.
 
 Document Intake
--------------
+==============
 
 The document intake process handles initial document validation and acquisition:
 
@@ -21,7 +21,7 @@ The document intake process handles initial document validation and acquisition:
     - Error handling and retry mechanisms
 
 Text Extraction
--------------
+==============
 
 Text extraction is handled by the unstructured.io library:
 
@@ -57,7 +57,7 @@ Knowledge is extracted and organized using the Qwen API:
     - Graph traversal optimization
 
 Task Management
--------------
+==============
 
 Tasks are managed using Redis and Celery:
 
@@ -72,7 +72,7 @@ Tasks are managed using Redis and Celery:
     - Task failure recovery
 
 Data Storage
-----------
+============
 
 The system uses multiple databases for different aspects:
 
@@ -92,7 +92,7 @@ The system uses multiple databases for different aspects:
     - System configuration
 
 API Integration
--------------
+==============
 
 External API integration is managed through dedicated clients:
 
@@ -107,7 +107,7 @@ External API integration is managed through dedicated clients:
     - Citation extraction
 
 Monitoring and Logging
---------------------
+=====================
 
 System monitoring provides operational visibility:
 
@@ -122,7 +122,7 @@ System monitoring provides operational visibility:
     - System health checks
 
 Web Interface
------------
+============
 
 The web interface provides visualization and interaction:
 
