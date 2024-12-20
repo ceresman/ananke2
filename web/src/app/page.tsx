@@ -177,6 +177,12 @@ export default function Home() {
           </Button>
         </div>
 
+        {error && (
+          <Alert variant="destructive">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
+
         {/* Main Content */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Graph Visualization */}
@@ -189,6 +195,14 @@ export default function Home() {
                   nodeAutoColorBy="type"
                   linkWidth={1}
                   onNodeClick={handleNodeClick}
+                  linkLabel={(link) => (link as any).description}
+                  nodeCanvasObject={(node, ctx, globalScale) => {
+                    const label = (node as any).name;
+                    const fontSize = 12 / globalScale;
+                    ctx.font = `${fontSize}px Sans-Serif`;
+                    ctx.fillStyle = 'rgba(255,255,255,0.8)';
+                    ctx.fillText(label, (node as any).x + 6, (node as any).y + 4);
+                  }}
                 />
               </div>
             </Card>
