@@ -1,21 +1,14 @@
 'use client';
 
-import { Input } from "../components/ui/input";
-import { Button } from "../components/ui/button";
-import { Card } from "../components/ui/card";
-import { Alert, AlertDescription } from "../components/ui/alert";
-import dynamic from 'next/dynamic';
-import { useState } from 'react';
-import { Search } from 'lucide-react';
-import type { Node, GraphData } from '../types/graph';
+import { useState, useCallback } from 'react';
+import { Network } from 'react-vis-network-graph';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Alert } from '@/components/ui/alert';
+import { GraphData, Node } from '@/types/graph';
 
-// Dynamic import of ForceGraph to avoid SSR issues
-const ForceGraph2D = dynamic(() => import('react-force-graph').then(mod => mod.ForceGraph2D), {
-  ssr: false,
-  loading: () => <div className="w-full h-full bg-gray-100 animate-pulse rounded-lg" />
-});
-
-// Sample data structure demonstrating all node types
+// Sample data structure
 const sampleData: GraphData = {
   nodes: [
     {
@@ -39,141 +32,126 @@ const sampleData: GraphData = {
       type: 'math',
       description: 'Mathematical foundation of graph theory',
       mathExpression: 'G = (V, E) where V is vertices and E is edges'
-    },
-    {
-      id: '4',
-      name: 'Knowledge Inference Rule',
-      type: 'logic',
-      description: 'Logical inference rules for knowledge graphs',
-      logicExpression: 'IF node(x) AND edge(x,y) THEN connected(x,y)'
-    },
-    {
-      id: '5',
-      name: 'Architecture Diagram',
-      type: 'image',
-      description: 'System architecture visualization',
-      image: 'https://example.com/diagram.png'
     }
   ],
   links: [
-    { source: '1', target: '2', value: 1, description: 'Implements algorithms from' },
-    { source: '2', target: '3', value: 1, description: 'Based on formula' },
-    { source: '3', target: '4', value: 1, description: 'Supports inference rules' },
-    { source: '1', target: '5', value: 1, description: 'Visualized in' }
+    { source: '1', target: '2', value: 1 },
+    { source: '2', target: '3', value: 1 }
   ]
+};
+
+// Convert data to vis-network format
+const getVisData = (data: GraphData) => {
+  const nodes = data.nodes.map(node => ({
+    id: node.id,
+    label: node.name,
+    title: node.description,
+    group: node.type
+  }));
+
+  const edges = data.links.map(link => ({
+    from: link.source,
+    to: link.target,
+    value: link.value
+  }));
+
+  return { nodes, edges };
+};
+
+// Network options
+const options = {
+  nodes: {
+    shape: 'dot',
+    size: 16,
+    font: {
+      size: 14
+    }
+  },
+  edges: {
+    width: 1,
+    smooth: {
+      type: 'continuous'
+    }
+  },
+  physics: {
+    stabilization: false,
+    barnesHut: {
+      gravitationalConstant: -80000,
+      springConstant: 0.001,
+      springLength: 200
+    }
+  },
+  groups: {
+    paper: { color: '#97C2FC' },
+    code: { color: '#FB7E81' },
+    math: { color: '#7BE141' }
+  }
 };
 
 export default function Home() {
   const [searchQuery, setSearchQuery] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
   const [graphData, setGraphData] = useState<GraphData>(sampleData);
-  const [isLoading, setIsLoading] = useState(false);
-  const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
-  const [error, setError] = useState<string | null>(null);
 
-  console.log('Current graphData:', graphData);
-
-  const handleSearch = async () => {
+  const handleSearch = useCallback(() => {
     if (!searchQuery.trim()) return;
-    setError(null);
     setIsLoading(true);
-    try {
-      await new Promise(resolve => setTimeout(resolve, 1000));
+    setError(null);
 
+    try {
       const filteredNodes = sampleData.nodes.filter(node =>
         node.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         node.description?.toLowerCase().includes(searchQuery.toLowerCase())
       );
 
       if (filteredNodes.length === 0) {
-        setError('No results found for your search query');
+        setError('No results found');
+        setGraphData({ nodes: [], links: [] });
+        setIsLoading(false);
         return;
       }
 
-      const nodeIds = new Set(filteredNodes.map(n => n.id));
+      const nodeIds = new Set(filteredNodes.map(node => node.id));
       const relatedLinks = sampleData.links.filter(link =>
         nodeIds.has(link.source as string) || nodeIds.has(link.target as string)
       );
-
-      relatedLinks.forEach(link => {
-        const sourceId = link.source as string;
-        const targetId = link.target as string;
-        if (!nodeIds.has(sourceId)) {
-          nodeIds.add(sourceId);
-          filteredNodes.push(sampleData.nodes.find(n => n.id === sourceId)!);
-        }
-        if (!nodeIds.has(targetId)) {
-          nodeIds.add(targetId);
-          filteredNodes.push(sampleData.nodes.find(n => n.id === targetId)!);
-        }
-      });
 
       setGraphData({
         nodes: filteredNodes,
         links: relatedLinks
       });
-    } catch (error) {
-      setError('An error occurred while searching. Please try again.');
-      console.error('Search failed:', error);
+    } catch (err) {
+      setError('Error searching graph data');
+      console.error(err);
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [searchQuery]);
 
-  const handleNodeClick = (node: any, event: MouseEvent) => {
-    const typedNode = node as Node;
-    setSelectedNode(typedNode);
-    if (!expandedNodes.has(typedNode.id)) {
-      const newExpandedNodes = new Set(expandedNodes);
-      newExpandedNodes.add(typedNode.id);
-      setExpandedNodes(newExpandedNodes);
-
-      const connectedLinks = sampleData.links.filter(link =>
-        link.source === typedNode.id || link.target === typedNode.id
-      );
-
-      const newNodes = new Set(graphData.nodes.map(n => n.id));
-      const nodesToAdd: Node[] = [];
-
-      connectedLinks.forEach(link => {
-        const otherId = link.source === typedNode.id ? link.target : link.source;
-        if (!newNodes.has(otherId as string)) {
-          const otherNode = sampleData.nodes.find(n => n.id === otherId);
-          if (otherNode) nodesToAdd.push(otherNode);
-        }
-      });
-
-      if (nodesToAdd.length > 0 || connectedLinks.length > 0) {
-        setGraphData(prev => ({
-          nodes: [...prev.nodes, ...nodesToAdd],
-          links: [...prev.links, ...connectedLinks.filter(link =>
-            !prev.links.some(l =>
-              l.source === link.source && l.target === link.target
-            )
-          )]
-        }));
+  const handleNodeClick = useCallback((params: any) => {
+    if (params.nodes && params.nodes[0]) {
+      const nodeId = params.nodes[0];
+      const node = sampleData.nodes.find(n => n.id === nodeId);
+      if (node) {
+        setSelectedNode(node);
       }
     }
-  };
+  }, []);
+
+  const visData = getVisData(graphData);
 
   return (
-    <main className="min-h-screen p-4 lg:p-8 bg-gray-50">
-      <div className="max-w-screen-2xl mx-auto space-y-6">
-        {/* Search Bar */}
-        <div className="flex flex-col sm:flex-row gap-4">
-          <div className="relative flex-1">
-            <Input
-              placeholder="Search knowledge graph..."
-              value={searchQuery}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
-              onKeyDown={(e: React.KeyboardEvent) => {
-                if (e.key === 'Enter') handleSearch();
-              }}
-              className="pl-10"
-              disabled={isLoading}
-            />
-            <Search className="absolute left-3 top-2.5 text-gray-400" size={20} />
-          </div>
+    <div className="container mx-auto p-4 min-h-screen">
+      <div className="flex flex-col gap-4">
+        <div className="flex gap-2">
+          <Input
+            placeholder="Search knowledge graph..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="max-w-md"
+          />
           <Button onClick={handleSearch} disabled={isLoading}>
             {isLoading ? 'Searching...' : 'Search'}
           </Button>
@@ -181,99 +159,50 @@ export default function Home() {
 
         {error && (
           <Alert variant="destructive">
-            <AlertDescription>{error}</AlertDescription>
+            <p>{error}</p>
           </Alert>
         )}
 
-        {/* Main Content */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Graph Visualization */}
-          <div className="lg:col-span-2">
-            <Card className="p-4">
-              <div className="w-full h-[600px]">
-                <ForceGraph2D
-                  graphData={graphData}
-                  nodeLabel="name"
-                  nodeAutoColorBy="type"
-                  linkWidth={1}
-                  onNodeClick={handleNodeClick}
-                  linkLabel={(link) => (link as any).description}
-                  nodeCanvasObject={(node, ctx, globalScale) => {
-                    const label = (node as any).name;
-                    const fontSize = 12 / globalScale;
-                    ctx.font = `${fontSize}px Sans-Serif`;
-                    ctx.fillStyle = 'rgba(255,255,255,0.8)';
-                    ctx.fillText(label, (node as any).x + 6, (node as any).y + 4);
-                  }}
-                />
-              </div>
-            </Card>
+        <div className="flex flex-col lg:flex-row gap-4">
+          <div className="w-full lg:w-2/3 h-[600px] border rounded-lg overflow-hidden bg-white">
+            <Network
+              data={visData}
+              options={options}
+              events={{
+                click: handleNodeClick
+              }}
+              style={{ width: '100%', height: '100%' }}
+            />
           </div>
 
-          {/* Node Details */}
-          <div className="lg:col-span-1">
-            <Card className="p-4">
-              {selectedNode ? (
-                <div className="space-y-4">
-                  <h2 className="text-2xl font-bold">{selectedNode.name}</h2>
-                  <div className="space-y-2">
-                    <h3 className="font-semibold">Type</h3>
-                    <p className="text-gray-600 capitalize">{selectedNode.type}</p>
+          <div className="w-full lg:w-1/3">
+            {selectedNode && (
+              <Card className="p-4">
+                <h3 className="text-lg font-semibold mb-2">{selectedNode.name}</h3>
+                <p className="text-sm text-gray-600 mb-4">{selectedNode.description}</p>
+                {selectedNode.type === 'paper' && (
+                  <a href={selectedNode.paper} className="text-blue-500 hover:underline">
+                    View Paper
+                  </a>
+                )}
+                {selectedNode.type === 'code' && (
+                  <div>
+                    <a href={selectedNode.codeRepo} className="text-blue-500 hover:underline block">
+                      View Repository
+                    </a>
+                    <p className="text-sm text-gray-500 mt-2">File: {selectedNode.codePart}</p>
                   </div>
-                  {selectedNode.description && (
-                    <div className="space-y-2">
-                      <h3 className="font-semibold">Description</h3>
-                      <p className="text-gray-600">{selectedNode.description}</p>
-                    </div>
-                  )}
-                  {selectedNode.codeRepo && (
-                    <div className="space-y-2">
-                      <h3 className="font-semibold">Code Repository</h3>
-                      <a href={selectedNode.codeRepo} target="_blank" rel="noopener noreferrer"
-                         className="text-blue-600 hover:underline">{selectedNode.codeRepo}</a>
-                      {selectedNode.codePart && (
-                        <p className="text-gray-600">File: {selectedNode.codePart}</p>
-                      )}
-                    </div>
-                  )}
-                  {selectedNode.paper && (
-                    <div className="space-y-2">
-                      <h3 className="font-semibold">Academic Paper</h3>
-                      <a href={selectedNode.paper} target="_blank" rel="noopener noreferrer"
-                         className="text-blue-600 hover:underline">View Paper</a>
-                    </div>
-                  )}
-                  {selectedNode.mathExpression && (
-                    <div className="space-y-2">
-                      <h3 className="font-semibold">Mathematical Expression</h3>
-                      <p className="text-gray-600 font-mono bg-gray-50 p-2 rounded">
-                        {selectedNode.mathExpression}
-                      </p>
-                    </div>
-                  )}
-                  {selectedNode.logicExpression && (
-                    <div className="space-y-2">
-                      <h3 className="font-semibold">Logical Expression</h3>
-                      <p className="text-gray-600 font-mono bg-gray-50 p-2 rounded">
-                        {selectedNode.logicExpression}
-                      </p>
-                    </div>
-                  )}
-                  {selectedNode.image && (
-                    <div className="space-y-2">
-                      <h3 className="font-semibold">Image</h3>
-                      <img src={selectedNode.image} alt={selectedNode.name}
-                           className="w-full rounded-lg shadow-sm" />
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <p className="text-gray-500">Select a node to view details</p>
-              )}
-            </Card>
+                )}
+                {selectedNode.type === 'math' && (
+                  <div className="bg-gray-50 p-2 rounded">
+                    <code>{selectedNode.mathExpression}</code>
+                  </div>
+                )}
+              </Card>
+            )}
           </div>
         </div>
       </div>
-    </main>
+    </div>
   );
 }
