@@ -201,8 +201,7 @@ async def test_neo4j_interface(test_structured_data):
     assert driver.closed  # Check closed status on stored reference
 
     # Test disconnect
-    await interface.disconnect()
-    assert interface._driver.closed
+    await interface.disconnect()  # Should handle None gracefully
 
 @pytest.mark.asyncio
 async def test_chroma_interface(test_structured_data):
