@@ -1,5 +1,5 @@
-# Use Python 3.11 as base image
-FROM python:3.11-slim
+# Use Python 3.12 as base image
+FROM python:3.12-slim
 
 # Set working directory
 WORKDIR /app
@@ -15,18 +15,14 @@ RUN apt-get update && apt-get install -y \
     libffi-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Poetry
-ENV POETRY_HOME=/opt/poetry
-RUN curl -sSL https://install.python-poetry.org | python3 - && \
-    cd /usr/local/bin && \
-    ln -s /opt/poetry/bin/poetry && \
-    poetry config virtualenvs.create false
+# Configure pip to use BFSU mirror
+RUN pip config set global.index-url https://mirrors.bfsu.edu.cn/pypi/web/simple
 
-# Copy Poetry files
-COPY pyproject.toml poetry.lock ./
+# Copy requirements files
+COPY requirements.txt requirements-dev.txt ./
 
 # Install dependencies
-RUN poetry install --no-interaction --no-ansi
+RUN pip install --no-cache-dir -r requirements.txt -r requirements-dev.txt
 
 # Copy application code
 COPY . .

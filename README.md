@@ -64,7 +64,7 @@ Ananke2 is a comprehensive multi-modal knowledge extraction framework designed f
 ### Prerequisites
 - Python 3.12+
 - Docker and Docker Compose
-- Poetry for dependency management
+- Python venv module
 
 ### Installation
 1. Clone the repository:
@@ -73,21 +73,45 @@ git clone https://github.com/ceresman/ananke2.git
 cd ananke2
 ```
 
-2. Install dependencies:
+2. Create and activate virtual environment:
 ```bash
-poetry install
+python -m venv .venv
+source .venv/bin/activate  # On Unix/macOS
+# or
+.venv\Scripts\activate  # On Windows
 ```
 
-3. Configure environment:
+3. Configure pip to use BFSU mirror:
+```bash
+pip config set global.index-url https://mirrors.bfsu.edu.cn/pypi/web/simple
+```
+
+4. Install dependencies:
+```bash
+pip install -r requirements.txt
+pip install -r requirements-dev.txt  # For development
+```
+
+5. Configure environment:
 ```bash
 cp .env.example .env
 # Edit .env with your credentials and API keys
 ```
 
-4. Start services:
+6. Start services:
 ```bash
 docker-compose up -d
 ```
+
+### Troubleshooting
+- If you encounter SSL errors with the BFSU mirror, try:
+  ```bash
+  pip install --trusted-host mirrors.bfsu.edu.cn -r requirements.txt
+  ```
+- For permission errors on Unix/Linux:
+  ```bash
+  python -m venv .venv --system-site-packages
+  ```
 
 ### Configuration
 Key environment variables in `.env`:
@@ -172,14 +196,14 @@ doc_fr = await process_document(file_path="paper_fr.pdf", language="fr")
 
 ### Running Tests
 ```bash
-poetry run pytest tests/
+python -m pytest tests/
 ```
 
 ### Code Style
 ```bash
-poetry run black .
-poetry run isort .
-poetry run flake8
+black .
+isort .
+flake8
 ```
 
 ## License
