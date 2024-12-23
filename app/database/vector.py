@@ -140,19 +140,21 @@ class ChromaInterface(DatabaseInterface[EntitySemantic]):
             ConnectionError: If not connected to ChromaDB
             Exception: For other read errors
         """
-        async def _read():
-            result = self._collection.get(
-                ids=[str(id)],
-                include=["embeddings", "metadatas"]
-            )
-            if not result["ids"]:
-                return None
-            return EntitySemantic(
-                semantic_id=UUID(result["ids"][0]),
-                name=result["metadatas"][0]["name"],
-                vector_representation=np.array(result["embeddings"][0])
-            )
-        return await asyncio.to_thread(_read)
+        try:
+            result = await self._collection.get(ids=[str(id)])
+            if result["ids"]:
+                metadata = result["metadatas"][0]
+                return EntitySemantic(
+                    semantic_id=UUID(result["ids"][0]),
+                    name=metadata.get("type", ""),
+                    semantic_type=metadata.get("type", ""),
+                    semantic_value=metadata.get("value", ""),
+                    vector_representation=result["embeddings"][0]
+                )
+            return None
+        except Exception as e:
+            print(f"Error reading semantic entity from Chroma: {str(e)}")
+            raise
 
     async def update(self, id: UUID, item: EntitySemantic) -> bool:
         """Update existing semantic entity and its embedding.

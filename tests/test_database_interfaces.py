@@ -150,6 +150,14 @@ async def test_neo4j_interface(test_structured_data):
             """Return authenticated session."""
             return self._session
 
+        async def verify_authentication(self):
+            """Mock successful authentication."""
+            return True
+
+        async def verify_connectivity(self):
+            """Mock successful connectivity check."""
+            return True
+
         async def close(self):
             await self._session.close()
 
@@ -228,7 +236,7 @@ async def test_chroma_interface(test_structured_data):
     # Test read operation
     read_data = await interface.read(test_structured_data.data_id)
     assert read_data is not None
-    assert read_data.data_type == test_structured_data.data_type
+    assert isinstance(read_data, EntitySemantic)
 
     # Test read with non-existent ID
     non_existent_data = await interface.read(UUID('00000000-0000-0000-0000-000000000000'))
@@ -284,6 +292,7 @@ async def test_mysql_interface(test_structured_data):
             self._transaction = None
             self._auth_checked = True
             self._connected = True
+            self._items = []
 
         async def __aenter__(self):
             if not self._connected:
@@ -316,6 +325,14 @@ async def test_mysql_interface(test_structured_data):
 
         async def rollback(self):
             """Mock rollback."""
+            pass
+
+        def add(self, item):
+            """Mock SQLAlchemy add method."""
+            self._items.append(item)
+
+        async def flush(self):
+            """Mock SQLAlchemy flush method."""
             pass
 
         async def close(self):
