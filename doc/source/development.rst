@@ -6,6 +6,12 @@ Environment Setup
 
 The Ananke2 project uses Python's built-in venv module for dependency management.
 
+Version Compatibility
+~~~~~~~~~~~~~~~~~~
+- Python: 3.12+ required
+- pip: Latest version recommended
+- Operating Systems: Windows, macOS, Linux supported
+
 Prerequisites
 ~~~~~~~~~~~~
 - Python 3.12+
@@ -15,35 +21,27 @@ Prerequisites
 Installation Steps
 ~~~~~~~~~~~~~~~~
 
-1. Clone the repository::
-
-    git clone https://github.com/ceresman/ananke2.git
-    cd ananke2
-
-2. Create and activate virtual environment::
+1. Create and activate virtual environment::
 
     python -m venv .venv
     source .venv/bin/activate  # On Unix/macOS
     # or
     .venv\Scripts\activate  # On Windows
 
-3. Configure pip to use BFSU mirror::
+2. Configure pip to use BFSU mirror::
 
     pip config set global.index-url https://mirrors.bfsu.edu.cn/pypi/web/simple
 
-4. Install dependencies::
+3. Install dependencies::
 
     pip install -r requirements.txt
     pip install -r requirements-dev.txt  # For development
 
-5. Configure environment::
-
-    cp .env.example .env
-    # Edit .env with your credentials and API keys
-
-6. Start services::
-
-    docker-compose up -d
+Best Practices
+~~~~~~~~~~~~
+- Always activate the virtual environment before running any pip commands
+- Use requirements-dev.txt for development dependencies
+- Keep requirements.txt updated when adding new dependencies
 
 Development Workflow
 ------------------

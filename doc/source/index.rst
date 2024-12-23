@@ -14,6 +14,7 @@ knowledge graph generation.
    :maxdepth: 2
    :caption: Contents:
 
+   dependency_management
    process_flows
    architecture
    development

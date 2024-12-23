@@ -103,6 +103,16 @@ cp .env.example .env
 docker-compose up -d
 ```
 
+### Troubleshooting
+- If you encounter SSL errors with the BFSU mirror, try:
+  ```bash
+  pip install --trusted-host mirrors.bfsu.edu.cn -r requirements.txt
+  ```
+- For permission errors on Unix/Linux:
+  ```bash
+  python -m venv .venv --system-site-packages
+  ```
+
 ### Configuration
 Key environment variables in `.env`:
 ```
