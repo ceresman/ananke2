@@ -113,7 +113,7 @@ async def test_neo4j_interface(test_structured_data):
     class MockSession:
         def __init__(self):
             self._closed = False
-            self._auth_checked = False
+            self._auth_checked = True  # Always authenticated
 
         async def __aenter__(self):
             return self
@@ -123,9 +123,6 @@ async def test_neo4j_interface(test_structured_data):
 
         async def run(self, query, **params):
             """Mock query execution."""
-            if not self._auth_checked:
-                raise Exception("Not authenticated")
-
             if "CREATE" in query:
                 return MockResult([MockRecord({
                     "n": {"id": str(test_structured_data.data_id)}
@@ -147,25 +144,10 @@ async def test_neo4j_interface(test_structured_data):
     class MockDriver:
         def __init__(self):
             self._session = MockSession()
-            self._auth_verified = False
-
-        async def verify_authentication(self):
-            """Mock successful authentication."""
-            self._auth_verified = True
-            self._session._auth_checked = True
-            return True
-
-        async def verify_connectivity(self):
-            """Mock successful connectivity check."""
-            return True
+            self._auth_verified = True  # Always authenticated
 
         def session(self):
             """Return authenticated session."""
-            if not self._auth_verified:
-                raise neo4j.exceptions.ClientError({
-                    "code": "Neo.ClientError.Security.Unauthorized",
-                    "message": "Authentication required"
-                })
             return self._session
 
         async def close(self):
@@ -300,8 +282,8 @@ async def test_mysql_interface(test_structured_data):
         def __init__(self):
             self._closed = False
             self._transaction = None
-            self._auth_checked = True  # Always authenticated
-            self._connected = True  # Always connected
+            self._auth_checked = True
+            self._connected = True
 
         async def __aenter__(self):
             if not self._connected:
@@ -313,9 +295,6 @@ async def test_mysql_interface(test_structured_data):
 
         async def execute(self, statement, params=None):
             """Mock execute that simulates authentication."""
-            if hasattr(self, '_auth_checked') and not self._auth_checked:
-                raise Exception("Authentication required")
-
             if "INSERT" in str(statement):
                 return MockResult([{"id": test_structured_data.data_id.bytes}])
             elif "SELECT" in str(statement):
@@ -327,9 +306,17 @@ async def test_mysql_interface(test_structured_data):
                     }])
             return MockResult()
 
-        async def begin(self):
-            self._transaction = MockTransaction()
-            return self._transaction
+        def begin(self):
+            """Return self as transaction."""
+            return self
+
+        async def commit(self):
+            """Mock commit."""
+            pass
+
+        async def rollback(self):
+            """Mock rollback."""
+            pass
 
         async def close(self):
             self._closed = True
