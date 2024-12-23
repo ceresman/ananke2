@@ -93,7 +93,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    command: /bin/bash -c "poetry install && poetry run celery -A app.tasks worker --loglevel=info"
+    command: celery -A app.tasks worker --loglevel=info
     environment:
       - DOCKER_NETWORK=true
       - CELERY_BROKER_URL=redis://redis:6379/0
@@ -134,7 +134,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    command: /bin/bash -c "poetry install && poetry run python tests/test_document_workflow.py"
+    command: python -m pytest tests/test_document_workflow.py
     environment:
       - DOCKER_NETWORK=true
       - CELERY_BROKER_URL=redis://redis:6379/0
@@ -163,10 +163,3 @@ services:
         condition: service_healthy
       celery-worker:
         condition: service_healthy
-
-volumes:
-  redis_data:
-  neo4j_data:
-  neo4j_logs:
-  mysql_data:
-  chroma_data:
