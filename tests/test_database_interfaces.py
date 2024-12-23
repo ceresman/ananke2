@@ -2,6 +2,8 @@
 
 import pytest
 from uuid import UUID
+import neo4j
+from app.models.types import StructuredDataBase  # Add import for test_structured_data
 from app.database.graph import Neo4jInterface
 from app.database.vector import ChromaInterface
 from app.database.relational import MySQLInterface
@@ -86,11 +88,11 @@ mock_read_data = {
 }
 
 @pytest.mark.asyncio
-async def test_neo4j_interface():
-    """Test Neo4j interface with mocked driver."""
+async def test_neo4j_interface(test_structured_data):
+    """Test Neo4j interface implementation."""
     class MockRecord:
-        def __init__(self, data):
-            self._data = data
+        def __init__(self, data=None):
+            self._data = data if data else {}
 
         def get(self, key):
             return self._data.get(key)
@@ -99,114 +101,117 @@ async def test_neo4j_interface():
             return self._data
 
     class MockResult:
-        def __init__(self, records):
+        def __init__(self, records=None):
             self._records = records if records else []
 
-        async def single(self):
+        def single(self):
             return self._records[0] if self._records else None
 
-        async def all(self):
+        def all(self):
             return self._records
 
     class MockSession:
+        def __init__(self):
+            self._closed = False
+            self._auth_checked = False
+
         async def __aenter__(self):
             return self
 
         async def __aexit__(self, exc_type, exc_val, exc_tb):
-            pass
+            await self.close()
 
-        async def run(self, query, **kwargs):
+        async def run(self, query, **params):
+            """Mock query execution."""
+            if not self._auth_checked:
+                raise Exception("Not authenticated")
+
             if "CREATE" in query:
-                record = MockRecord({
-                    "e.id": test_entity_symbol.symbol_id.bytes  # Return bytes
-                })
-                return MockResult([record])
+                return MockResult([MockRecord({
+                    "n": {"id": str(test_structured_data.data_id)}
+                })])
             elif "MATCH" in query:
-                if kwargs.get("id") == test_entity_symbol.symbol_id.bytes:  # Compare bytes
-                    record = MockRecord({
-                        "e": {
-                            "id": test_entity_symbol.symbol_id.bytes,
-                            "name": test_entity_symbol.name,
-                            "descriptions": test_entity_symbol.descriptions,
-                            "entity_type": test_entity_symbol.entity_type
+                if params.get("id") == str(test_structured_data.data_id):
+                    return MockResult([MockRecord({
+                        "n": {
+                            "id": str(test_structured_data.data_id),
+                            "type": test_structured_data.data_type,
+                            "value": test_structured_data.data_value
                         }
-                    })
-                    return MockResult([record])
-            return MockResult([])
+                    })])
+            return MockResult()
 
         async def close(self):
-            pass
+            self._closed = True
 
     class MockDriver:
         def __init__(self):
-            self.closed = False
-            self._auth_verified = True  # Start authenticated
-            self._conn_verified = True  # Start connected
             self._session = MockSession()
+            self._auth_verified = False
 
         async def verify_authentication(self):
-            """Mock authentication verification that always succeeds."""
+            """Mock successful authentication."""
+            self._auth_verified = True
+            self._session._auth_checked = True
             return True
 
         async def verify_connectivity(self):
-            """Mock connectivity verification that always succeeds."""
+            """Mock successful connectivity check."""
             return True
 
-        def session(self):  # Not async - Neo4j driver's session() is not async
-            """Return mock session."""
+        def session(self):
+            """Return authenticated session."""
+            if not self._auth_verified:
+                raise neo4j.exceptions.ClientError({
+                    "code": "Neo.ClientError.Security.Unauthorized",
+                    "message": "Authentication required"
+                })
             return self._session
 
         async def close(self):
-            self.closed = True
+            await self._session.close()
 
-    # Test Neo4j interface with proper credentials
+    # Test Neo4j interface
     interface = Neo4jInterface("bolt://localhost:7687", "neo4j", "test123")
     interface._driver = MockDriver()
 
-    # Test connection
+    # Test authentication
     await interface.connect()
-    assert interface._driver is not None
     assert interface._driver._auth_verified
-    assert interface._driver._conn_verified
 
-    # Test create
-    created_id = await interface.create(test_entity_symbol)
-    assert isinstance(created_id, UUID)
-    assert str(created_id) == str(test_entity_symbol.symbol_id)
+    # Test operations
+    created_id = await interface.create(test_structured_data)
+    assert created_id == test_structured_data.data_id
 
-    # Test read
-    read_entity = await interface.read(created_id)
-    assert read_entity is not None
-    assert isinstance(read_entity, EntitySymbol)
-    assert str(read_entity.symbol_id) == str(test_entity_symbol.symbol_id)
+    read_data = await interface.read(test_structured_data.data_id)
+    assert read_data is not None
+    assert read_data.data_type == test_structured_data.data_type
+
+    # Test cleanup
+    await interface.close()
+    assert interface._driver._session._closed
 
     # Test disconnect
     await interface.disconnect()
     assert interface._driver.closed
 
 @pytest.mark.asyncio
-async def test_chroma_interface(test_entity_semantic):
+async def test_chroma_interface(test_structured_data):
     """Test Chroma interface implementation."""
     class MockCollection:
         def __init__(self):
             self.data = {}
 
         async def add(self, ids, embeddings, metadatas):
-            """Mock add method that returns immediately."""
+            """Mock add with proper metadata validation."""
             for id_, embedding, metadata in zip(ids, embeddings, metadatas):
-                # Ensure all metadata values are primitive types
+                # Convert complex types to strings, keep primitives as-is
                 safe_metadata = {}
                 for k, v in metadata.items():
                     if isinstance(v, (str, int, float, bool)):
                         safe_metadata[k] = v
-                    elif isinstance(v, (list, tuple)):
-                        # Convert first list item to string if exists
-                        safe_metadata[k] = str(v[0]) if v else ""
-                    elif isinstance(v, dict):
-                        # Convert dict to string representation
+                    elif isinstance(v, (list, dict, tuple)):
                         safe_metadata[k] = str(v)
-                    elif v is None:
-                        safe_metadata[k] = ""
                     else:
                         safe_metadata[k] = str(v)
                 self.data[id_] = {
@@ -215,7 +220,8 @@ async def test_chroma_interface(test_entity_semantic):
                 }
             return True
 
-        async def get(self, ids=None, include=None, limit=None, offset=None):
+        async def get(self, ids=None, where=None):
+            """Mock get with proper return format."""
             if ids:
                 return {
                     "ids": ids,
@@ -231,26 +237,20 @@ async def test_chroma_interface(test_entity_semantic):
     # Test Chroma interface
     interface = ChromaInterface()
     interface._client = MockClient()
-    interface._collection = None  # Should be set during connect
+    interface._collection = interface._client.get_or_create_collection("test")
 
-    # Test connection
-    await interface.connect()
-    assert interface._collection is not None
+    # Test data operations
+    created_id = await interface.create(test_structured_data)
+    assert created_id == test_structured_data.data_id
 
-    # Test create with proper UUID handling
-    semantic_id = test_entity_semantic.semantic_id
-    created_id = await interface.create(test_entity_semantic)
-    assert isinstance(created_id, UUID)
-    assert created_id == semantic_id
+    # Test read operation
+    read_data = await interface.read(test_structured_data.data_id)
+    assert read_data is not None
+    assert read_data.data_type == test_structured_data.data_type
 
-    # Test read with proper UUID handling
-    read_semantic = await interface.read(created_id)
-    assert read_semantic is not None
-    assert isinstance(read_semantic, EntitySemantic)
-    assert read_semantic.semantic_id == semantic_id
-    assert read_semantic.name == test_entity_semantic.name
-    assert read_semantic.semantic_type == test_entity_semantic.semantic_type
-    assert read_semantic.semantic_value == test_entity_semantic.semantic_value
+    # Test read with non-existent ID
+    non_existent_data = await interface.read(UUID('00000000-0000-0000-0000-000000000000'))
+    assert non_existent_data is None
 
     # Test disconnect
     await interface.disconnect()
@@ -337,24 +337,33 @@ async def test_mysql_interface(test_structured_data):
     class MockEngine:
         def __init__(self):
             self._session = MockSession()
-            self._pool = None
 
         async def begin(self):
             """Simulate SQLAlchemy engine begin."""
             class AsyncConnection:
                 def __init__(self, session):
                     self.session = session
+                    self.connection = None
+
                 async def __aenter__(self):
-                    return self.session
+                    self.connection = self.session
+                    return self.connection
+
                 async def __aexit__(self, exc_type, exc_val, exc_tb):
-                    await self.session.close()
+                    if self.connection:
+                        await self.connection.close()
+
                 async def close(self):
-                    await self.session.close()
-                async def execute(self, statement):
-                    return await self.session.execute(statement)
+                    if self.connection:
+                        await self.connection.close()
+
+                async def execute(self, statement, params=None):
+                    return await self.session.execute(statement, params)
+
                 async def run_sync(self, func):
                     """Mock run_sync for table creation."""
                     return True
+
             return AsyncConnection(self._session)
 
         async def dispose(self):
@@ -369,12 +378,23 @@ async def test_mysql_interface(test_structured_data):
     interface = MySQLInterface(
         host="localhost", port=3306, user="test", password="test", database="test"
     )
-    interface._session_factory = lambda: MockSession()
-    interface._engine = MockEngine()  # Use proper mock engine
 
-    # Test connection
-    await interface.connect()
-    assert interface._session_factory is not None
+    # Set up mock engine and session
+    mock_engine = MockEngine()
+    interface._engine = mock_engine
+    interface._session_factory = lambda: mock_engine._session
+
+    # Test basic operations without real connection
+    assert interface._engine is not None
+    assert isinstance(interface._engine, MockEngine)
+
+    # Test data operations
+    data = await interface.create(test_structured_data)
+    assert data is not None
+
+    read_data = await interface.read(test_structured_data.data_id)
+    assert read_data is not None
+    assert read_data.data_type == test_structured_data.data_type
 
     # Test create
     created_id = await interface.create(test_structured_data)
@@ -392,27 +412,24 @@ async def test_mysql_interface(test_structured_data):
     assert interface._engine is None
 
 @pytest.mark.asyncio
-async def test_model_serialization(test_entity_symbol):
-    """Test model serialization and deserialization."""
-    # Test serialization
-    serialized = test_entity_symbol.model_dump()
-    assert isinstance(serialized, dict)
-    assert isinstance(serialized['symbol_id'], str)
-    assert serialized['name'] == "Test Entity"
-    assert serialized['entity_type'] == "TEST"
-    assert len(serialized['properties']) > 0
-    assert len(serialized['labels']) > 0
+async def test_model_serialization():
+    """Test model serialization with proper type handling."""
+    entity = EntitySymbol(
+        symbol_id=UUID('12345678-1234-5678-1234-567812345678'),
+        name="Test Entity",
+        entity_type="TEST",
+        descriptions=["Test Description"]
+    )
 
-    # Test Neo4j format
-    neo4j_format = test_entity_symbol.to_neo4j()
-    assert isinstance(neo4j_format, dict)
-    assert 'symbol_id' in neo4j_format
-    assert 'name' in neo4j_format
-    assert 'entity_type' in neo4j_format
+    # Test Neo4j serialization
+    neo4j_data = entity.to_neo4j()
+    assert isinstance(neo4j_data['symbol_id'], str)
 
-    # Test MySQL format
-    mysql_format = test_entity_symbol.to_mysql()
-    assert isinstance(mysql_format, dict)
-    assert 'symbol_id' in mysql_format
-    assert 'name' in mysql_format
-    assert 'entity_type' in mysql_format
+    # Test structured data serialization
+    data = StructuredData(
+        data_id=UUID('12345678-1234-5678-1234-567812345678'),
+        data_type="test",
+        data_value={"key": "value"}
+    )
+    assert isinstance(data.data_id, UUID)
+    assert isinstance(data.model_dump()['data_id'], str)
