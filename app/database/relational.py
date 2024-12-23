@@ -165,6 +165,7 @@ class MySQLInterface(DatabaseInterface[StructuredData]):
         """
         if self._engine:
             await self._engine.dispose()
+            self._engine = None
 
     async def create(self, item: StructuredData) -> UUID:
         """Create new structured data entry with transaction.

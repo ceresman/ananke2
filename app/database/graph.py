@@ -124,26 +124,30 @@ class Neo4jInterface(DatabaseInterface[EntitySymbol]):
             ConnectionError: If database connection fails
             Exception: If entity creation fails
         """
-        async with await self._driver.session() as session:
-            try:
-                result = await session.run(
-                    """
-                    CREATE (e:Entity {
-                        id: $id,
-                        name: $name,
-                        descriptions: $descriptions
-                    })
-                    RETURN e.id
-                    """,
-                    id=item.symbol_id.bytes,
-                    name=item.name,
-                    descriptions=item.descriptions
-                )
-                record = await result.single()
-                return UUID(bytes=record["e.id"])
-            except Exception as e:
-                print(f"Error creating entity in Neo4j: {str(e)}")
-                raise
+        session = await self._driver.session()
+        try:
+            result = await session.run(
+                """
+                CREATE (e:Entity {
+                    id: $id,
+                    name: $name,
+                    descriptions: $descriptions,
+                    entity_type: $entity_type
+                })
+                RETURN e.id
+                """,
+                id=item.symbol_id.bytes,
+                name=item.name,
+                descriptions=item.descriptions,
+                entity_type=item.entity_type
+            )
+            record = await result.single()
+            return UUID(bytes=record["e.id"])
+        except Exception as e:
+            print(f"Error creating entity in Neo4j: {str(e)}")
+            raise
+        finally:
+            await session.close()
 
     async def read(self, id: UUID) -> Optional[EntitySymbol]:
         """Read an entity from Neo4j by ID.
@@ -162,32 +166,34 @@ class Neo4jInterface(DatabaseInterface[EntitySymbol]):
             ConnectionError: If database connection fails
             Exception: If entity retrieval fails
         """
-        async with await self._driver.session() as session:
-            try:
-                result = await session.run(
-                    """
-                    MATCH (e:Entity {id: $id})
-                    RETURN e
-                    """,
-                    id=id.bytes
-                )
-                record = await result.single()
-                if not record:
-                    return None
+        session = await self._driver.session()
+        try:
+            result = await session.run(
+                """
+                MATCH (e:Entity {id: $id})
+                RETURN e
+                """,
+                id=id.bytes
+            )
+            record = await result.single()
+            if not record:
+                return None
 
-                entity = record["e"]
-                return EntitySymbol(
-                    symbol_id=UUID(bytes=entity["id"]),
-                    name=entity["name"],
-                    descriptions=entity["descriptions"],
-                    entity_type="ENTITY",
-                    semantics=[],
-                    properties=[],
-                    labels=[]
-                )
-            except Exception as e:
-                print(f"Error reading entity from Neo4j: {str(e)}")
-                raise
+            entity = record["e"]
+            return EntitySymbol(
+                symbol_id=UUID(bytes=entity["id"]),
+                name=entity["name"],
+                descriptions=entity["descriptions"],
+                entity_type=entity.get("entity_type", "ENTITY"),
+                semantics=[],
+                properties=[],
+                labels=[]
+            )
+        except Exception as e:
+            print(f"Error reading entity from Neo4j: {str(e)}")
+            raise
+        finally:
+            await session.close()
 
     async def update(self, id: UUID, item: EntitySymbol) -> bool:
         """Update an existing entity in Neo4j.
@@ -282,7 +288,7 @@ class Neo4jInterface(DatabaseInterface[EntitySymbol]):
                     symbol_id=UUID(record["e"]["id"]),
                     name=record["e"]["name"],
                     descriptions=record["e"]["descriptions"],
-                    entity_type="ENTITY",
+                    entity_type=record["e"].get("entity_type", "ENTITY"),
                     semantics=[],
                     properties=[],
                     labels=[]
