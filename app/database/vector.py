@@ -142,7 +142,9 @@ class ChromaInterface(DatabaseInterface[EntitySemantic]):
         """
         try:
             result = await self._collection.get(ids=[str(id)])
-            if result["ids"]:
+            if result["ids"] and len(result["ids"]) > 0:
+                if not result["metadatas"] or not result["embeddings"]:
+                    return None
                 metadata = result["metadatas"][0]
                 return EntitySemantic(
                     semantic_id=UUID(result["ids"][0]),
